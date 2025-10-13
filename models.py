@@ -30,3 +30,8 @@ class DeveloperProfile(BaseModel):
     assigned_to: str
     dominant_topic: Optional[int] = None
     recent_bugs: List[Bug] = []
+    
+class SearchResponse(BaseModel):
+    query: str
+    bugs: List[Bug]
+    developers: List[DevRec] 

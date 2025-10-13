@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import lifespan, run, single, _node_to_bug
-from models import Bug, SimilarBug, DevRec, TopicStat, DeveloperProfile
+from models import Bug, SimilarBug, DevRec, TopicStat, DeveloperProfile, SearchResponse
 
 app = FastAPI(title="EasyFix API", version="1.1.0", lifespan=lifespan)
 
@@ -107,3 +107,92 @@ async def mark_duplicate(id: int, dup_id: int):
     if not rec:
         raise HTTPException(400, "unable to create DUPLICATE_OF")
     return {"ok": True, "a": rec["a_id"], "b": rec["b_id"]}
+
+@app.get("/search", response_model=SearchResponse)
+async def search(
+    q: str = Query(..., min_length=2, description="User query text"),
+    limit: int = Query(25, ge=1, le=200),
+    dev_limit: int = Query(10, ge=1, le=100),
+):
+    """
+    Full-text search over bug summary/topic_label, with developer ranking:
+      1) Prefer assignees of SIMILAR_TO neighbors of matched bugs
+      2) Fallback to assignees of matched bugs (excluding 'nobody@mozilla.org')
+      3) Fallback to owners in the most-hit topics
+    """
+
+    # 0) FT search (requires: CREATE FULLTEXT INDEX bug_fulltext IF NOT EXISTS FOR (b:bug) ON EACH [b.summary, b.topic_label])
+    q_ft = """
+    CALL db.index.fulltext.queryNodes('bug_fulltext', $q)
+    YIELD node AS b, score
+    RETURN b, score
+    ORDER BY score DESC
+    LIMIT $limit
+    """
+    rows = await run(q_ft, {"q": q, "limit": limit})
+
+    # Build bug list + (id, score) pairs for weighting
+    bugs: list[Bug] = []
+    pairs: list[dict] = []   # [{id:int, score:float}]
+    for row in rows:
+        b = row["b"]
+        bugs.append(_node_to_bug(b))
+        pairs.append({"id": int(b["id"]), "score": float(row["score"])})
+
+    devs: list[DevRec] = []
+
+    if pairs:
+        # 1) Prefer assignees from similar bugs (better coverage for untriaged matches)
+        q_devs_sim = """
+        UNWIND $pairs AS row
+        WITH toInteger(row.id) AS id, toFloat(row.score) AS s
+        MATCH (:bug {id:id})-[:SIMILAR_TO]->(sbug:bug)
+        WITH sbug.assigned_to AS dev, s
+        WHERE dev IS NOT NULL AND dev <> '' AND dev <> 'nobody@mozilla.org'
+        RETURN dev AS developer,
+               count(*) AS freq,
+               sum(s)   AS score
+        ORDER BY score DESC, freq DESC
+        LIMIT $dev_limit
+        """
+        sim_rows = await run(q_devs_sim, {"pairs": pairs, "dev_limit": dev_limit})
+        devs = [DevRec(developer=r["developer"], freq=int(r["freq"]), score=float(r["score"])) for r in sim_rows]
+
+        # 2) Fallback: direct assignees of matched bugs (excluding 'nobody')
+        if not devs:
+            q_devs_direct = """
+            UNWIND $pairs AS row
+            WITH toInteger(row.id) AS id, toFloat(row.score) AS s
+            MATCH (b:bug {id:id})
+            WITH b.assigned_to AS dev, s
+            WHERE dev IS NOT NULL AND dev <> '' AND dev <> 'nobody@mozilla.org'
+            RETURN dev AS developer,
+                   count(*) AS freq,
+                   sum(s)   AS score
+            ORDER BY score DESC, freq DESC
+            LIMIT $dev_limit
+            """
+            dir_rows = await run(q_devs_direct, {"pairs": pairs, "dev_limit": dev_limit})
+            devs = [DevRec(developer=r["developer"], freq=int(r["freq"]), score=float(r["score"])) for r in dir_rows]
+
+        # 3) Fallback: owners from most-hit topics
+        if not devs:
+            q_topic_owners = """
+            UNWIND $pairs AS row
+            WITH toInteger(row.id) AS id
+            MATCH (b:bug {id:id})-[:IN_TOPIC]->(t:topic)
+            WITH t.id AS topic_id, count(*) AS hits
+            ORDER BY hits DESC
+            LIMIT 5
+            MATCH (bb:bug)-[:IN_TOPIC]->(:topic {id:topic_id})
+            WITH bb.assigned_to AS dev
+            WHERE dev IS NOT NULL AND dev <> '' AND dev <> 'nobody@mozilla.org'
+            RETURN dev AS developer, count(*) AS freq
+            ORDER BY freq DESC
+            LIMIT $dev_limit
+            """
+            top_rows = await run(q_topic_owners, {"pairs": pairs, "dev_limit": dev_limit})
+            devs = [DevRec(developer=r["developer"], freq=int(r["freq"]), score=float(r["freq"])) for r in top_rows]
+
+    return SearchResponse(query=q, bugs=bugs, developers=devs)
+

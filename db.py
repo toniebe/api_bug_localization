@@ -18,12 +18,22 @@ if not (NEO4J_URI and NEO4J_USER and NEO4J_PASS):
 
 driver = AsyncGraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASS))
 
+async def ensure_fulltext():
+    cypher = """
+    CREATE FULLTEXT INDEX bug_fulltext IF NOT EXISTS
+    FOR (b:bug) ON EACH [b.summary, b.topic_label]
+    """
+    async with driver.session(database=NEO4J_DB) as s:
+        cur = await s.run(cypher)
+        await cur.consume()
+        
 @asynccontextmanager
 async def lifespan(app):
     # ping on startup (outside tx)
     async with driver.session(database=NEO4J_DB) as s:
         cur = await s.run("RETURN 1 AS ok")
         await cur.single()
+        await ensure_fulltext()
     try:
         yield
     finally:
