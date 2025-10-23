@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 
 from firebase_client import auth, db, FIREBASE_WEB_API_KEY, IDT_BASE
 from firebase_admin import firestore
-
+import jwt
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # ===== Schemas =====
