@@ -3,3 +3,5 @@ uvicorn[standard]==0.30.6
 neo4j==5.23.1
 pydantic==2.9.2
 python-dotenv==1.0.1
+firebase-admin
+email-validator>=2.0.0.post2

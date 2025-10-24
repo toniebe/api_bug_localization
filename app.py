@@ -6,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import lifespan, run, single, _node_to_bug
 from models import Bug, SimilarBug, DevRec, TopicStat, DeveloperProfile, SearchResponse
+from firebase_auth import router as auth_router
 
 app = FastAPI(title="EasyFix API", version="1.1.0", lifespan=lifespan)
+from firebase_auth import router as auth_router
 
 # CORS (relax for MVP)
 app.add_middleware(
@@ -195,4 +197,6 @@ async def search(
             devs = [DevRec(developer=r["developer"], freq=int(r["freq"]), score=float(r["freq"])) for r in top_rows]
 
     return SearchResponse(query=q, bugs=bugs, developers=devs)
+
+app.include_router(auth_router)
 
