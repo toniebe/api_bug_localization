@@ -13,19 +13,19 @@ Install dependencies
 `pip install -r requirements.txt`
 
 Siapkan .env (template)
-
+```
 # Firebase
-FIREBASE_API_KEY=AIzaSyXXXX...           # Project Settings > Your apps (Web) > apiKey
+FIREBASE_API_KEY=AIzaSyXXXX...       
 FIREBASE_PROJECT_ID=your-project-id
 GOOGLE_APPLICATION_CREDENTIALS=serviceAccountKey.json
 ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
 # Neo4j
-NEO4J_URI=bolt://localhost:7687          # Local single node gunakan bolt://
+NEO4J_URI=bolt://localhost:7687    
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=YourNeo4jPassword
-NEO4J_DATABASE=neo4j                     # Ubah jika pakai DB lain
-
+NEO4J_DATABASE=neo4j                   
+```
 Letakkan serviceAccountKey.json di root project (selevel .env).
 
 #### Run Aplikasi
@@ -62,4 +62,5 @@ ReDoc: http://localhost:8000/redoc
 3. Search (Neo4j)
     - POST /search — body: {"query": "<keyword or sentence>"}
         Preprocess NLTK → query Neo4j (Bug–Commit–Developer)
+        
         Log transaksi ke Firestore: search_logs
