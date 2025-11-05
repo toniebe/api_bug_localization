@@ -1,36 +1,65 @@
-## DATABASE CONFIGURATION
-- install neoj4i desktop
-- create instance & database
-- import file dari folder out_lda/bugs_with_labels, developer_topic_labels, topic_cleaned, bug_relations
-- import cypher_script (ada di folder model graph/ neo4j_importer_cypher_script_2025-10-13.cypher)
-- run import
+# EasyFix Backend — FastAPI + Firebase + Neo4j
 
-Create a Neo4j Full-Text Index (run once)
+### Fitur Utama
+- Auth: register, login (Firebase Identity Toolkit), verify token, update profile, change password, password rese
+- RBAC: custom claims roles (admin, developer, user)
+- Search: terima keyword/sentence → NLTK preprocess → query Neo4j (Bug–Commit–Developer)
+- Audit: setiap pencarian dicatat ke Firestore (search_logs)
+- Swagger/OpenAPI: /docs & /redoc
 
-Open Neo4j Browser and run:
-````
-// Full-text index over bug text fields
-CREATE FULLTEXT INDEX bug_fulltext IF NOT EXISTS
-FOR (b:bug) ON EACH [b.summary, b.topic_label];
+### Instalasi
 
-// (Optional) full-text index for developer names/emails if you want direct dev search later
-// CREATE FULLTEXT INDEX dev_fulltext IF NOT EXISTS
-// FOR (d:developer) ON EACH [d.assigned_to];
-````
+Install dependencies
+`pip install -r requirements.txt`
 
-This enables db.index.fulltext.queryNodes(...) which is fast and ranked.
+Siapkan .env (template)
 
+# Firebase
+FIREBASE_API_KEY=AIzaSyXXXX...           # Project Settings > Your apps (Web) > apiKey
+FIREBASE_PROJECT_ID=your-project-id
+GOOGLE_APPLICATION_CREDENTIALS=serviceAccountKey.json
+ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
-#BACKEND for API
-## 1) install deps
-python -m venv env
-source .venv/bin/activate
-pip install -r requirements.txt
+# Neo4j
+NEO4J_URI=bolt://localhost:7687          # Local single node gunakan bolt://
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=YourNeo4jPassword
+NEO4J_DATABASE=neo4j                     # Ubah jika pakai DB lain
 
-## 2) set env (or create .env) - sesuaikan dengan config database masing2
-export NEO4J_URI='neo4j+s://<your-aura-host>:7687'
-export NEO4J_USER='neo4j'
-export NEO4J_PASS='<your-password>'
+Letakkan serviceAccountKey.json di root project (selevel .env).
 
-## 3) start api
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
+#### Run Aplikasi
+
+Selalu jalankan dari root (folder yang sama dengan .env):
+
+`uvicorn app.main:app --reload --port 8000`
+
+Swagger UI: http://localhost:8000/docs
+
+ReDoc: http://localhost:8000/redoc
+
+##### alur Auth
+- Register (default role user; role khusus hanya oleh admin)
+- Login → dapat id_token: Gunakan id_token sebagai Bearer untuk endpoint terproteksi
+- Authorize di Swagger
+    Klik Authorize (ikon gembok)
+    Tempel hanya JWT (tanpa kata Bearer ); Swagger akan menambahkannya otomatis.
+
+#### Endpoint Utama
+1. Health
+    GET / → status service
+
+2. Auth
+    - POST /auth/register — register user (admin dapat set role)
+    - POST /auth/login — login; return id_token, refresh_token, dll
+    - GET /auth/me — info profil & roles (Authorization: Bearer <id_token>)
+    - POST /auth/verify-token — verifikasi id_token (body)
+    - PATCH /auth/profile — update display_name / photo_url
+    - POST /auth/change-password — ganti password (body: id_token, new_password)
+    - POST /auth/send-password-reset — kirim email reset
+    - PUT /auth/roles/{uid} — set roles (admin only)
+
+3. Search (Neo4j)
+    - POST /search — body: {"query": "<keyword or sentence>"}
+        Preprocess NLTK → query Neo4j (Bug–Commit–Developer)
+        Log transaksi ke Firestore: search_logs
