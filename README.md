@@ -27,6 +27,8 @@ NEO4J_PASSWORD=YourNeo4jPassword
 NEO4J_DATABASE=neo4j                   
 ```
 Letakkan serviceAccountKey.json di root project (selevel .env).
+file ServiceAccountKey bisa di download di link berikut
+https://itbdsti-my.sharepoint.com/:f:/r/personal/23524319_mahasiswa_itb_ac_id/Documents/SEMESTER%202/Proyek%20Terapan/Kel%203/Setting%20files?csf=1&web=1&e=Lr60IF
 
 #### Run Aplikasi
 
