@@ -4,6 +4,8 @@ from app.config import settings
 from app.routes.auth_routes import router as auth_router
 from app.routes.search_routes import router as search_router
 from app.core import firebase  # noqa
+from app.routes.project_routes import router as project_router
+from app.routes.organization_routes import router as organization_router
 
 app = FastAPI(
     title="EasyFix API",
@@ -26,3 +28,5 @@ def healthcheck():
 
 app.include_router(auth_router)
 app.include_router(search_router)
+app.include_router(project_router)
+app.include_router(organization_router)

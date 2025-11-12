@@ -8,22 +8,26 @@ from app.models.auth import (
 from app.services.auth_service import (
   register_user, password_login, verify_id_token_logic,
   update_profile_logic, change_password_logic, send_password_reset_logic,
-  get_user_roles_from_claims, get_user_roles_from_firestore,set_user_roles
+  get_user_roles_from_claims, get_user_roles_from_firestore,set_user_roles, get_optional_user
 )
 from app.deps import get_current_user, require_roles
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/signup", response_model=RegisterResponse, summary="Register user baru")
-def register(req: RegisterRequest, current_user = Depends(get_current_user)):
-
-    if req.role: 
+def register(req: RegisterRequest, current_user = Depends(get_optional_user)):
+    # Publik: siapapun boleh daftar tanpa token
+    # Jika mengirim role, wajib admin
+    if req.role:
+        if not current_user:
+            raise HTTPException(status_code=403, detail="Not authenticated")
         decoded = getattr(current_user, "_decoded_token", {})  
         user_roles = get_user_roles_from_claims(decoded)
         if "admin" not in user_roles:
             raise HTTPException(status_code=403, detail="Only admin can assign roles")
-    
+
     return register_user(req)
+
 
 @router.post("/login", response_model=LoginResponse, summary="Login email & password")
 async def login(req: LoginRequest):

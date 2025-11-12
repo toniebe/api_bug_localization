@@ -2,7 +2,10 @@
 from typing import List, Optional, Dict, Any
 import httpx
 from fastapi import HTTPException
-from firebase_admin import firestore  # noqa
+from firebase_admin import firestore 
+from typing import Optional
+from fastapi import Header
+from app.core.firebase import auth
 
 from app.config import settings
 from app.core.firebase import auth, db
@@ -162,3 +165,23 @@ async def send_password_reset_logic(body: PasswordResetIn) -> Dict[str, Any]:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+async def get_optional_user(authorization: Optional[str] = Header(None)):
+    if not authorization:
+        return None
+    parts = authorization.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        try:
+            decoded = auth.verify_id_token(parts[1])
+            # simpan decoded di obyek user sederhana
+            class U: pass
+            u = U()
+            u.uid = decoded.get("uid")
+            u.email = decoded.get("email")
+            u._decoded_token = decoded
+            return u
+        except Exception:
+            return None
+    return None
