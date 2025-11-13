@@ -24,6 +24,8 @@ class LoginResponse(BaseModel):
     expires_in: int
     local_id: str
     email: EmailStr
+    organization_name: Optional[str] = None
+    project_name: Optional[str] = None
 
 class MeResponse(BaseModel):
     uid: str
