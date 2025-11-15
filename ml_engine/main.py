@@ -261,6 +261,7 @@ def main():
                     "--neo4j-db", neo4j_db,   # 👈 PENTING: kirim nama DB ke 03
                     "--log_path", log_path,
                 ]
+                print("STORE ARGS:", store_argv)  
                 with temp_argv(store_argv):
                     store_mod.main()
 

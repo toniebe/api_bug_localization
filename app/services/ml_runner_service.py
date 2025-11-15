@@ -205,6 +205,7 @@ def _run_pipeline_for_project(
             bufsize=1,
         )
 
+        progress = 5
         for line in proc.stdout:
             msg = line.strip()
             if not msg:
@@ -221,7 +222,6 @@ def _run_pipeline_for_project(
             # 2) update ringkasan status
             lower = msg.lower()
             stage = "RUNNING"
-            progress = 5
 
             if "[nlp]" in lower:
                 stage, progress = "NLP_PREPROCESS", 25

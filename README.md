@@ -15,20 +15,36 @@ Install dependencies
 Siapkan .env (template)
 ```
 # Firebase
-FIREBASE_API_KEY=AIzaSyXXXX...       
-FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_API_KEY=....
+FIREBASE_PROJECT_ID=easyfix-3cff3
 GOOGLE_APPLICATION_CREDENTIALS=serviceAccountKey.json
 ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
 # Neo4j
 NEO4J_URI=bolt://localhost:7687    
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=YourNeo4jPassword
-NEO4J_DATABASE=neo4j                   
+NEO4J_PASSWORD=neo4j2025
+
+#ml engine
+ML_ENGINE_DIR=ml_engine
+ML_PYTHON_BIN=python
+ML_MAIN_SCRIPT=main.py                
 ```
 Letakkan serviceAccountKey.json di root project (selevel .env).
 file ServiceAccountKey bisa di download di link berikut
 https://itbdsti-my.sharepoint.com/:f:/r/personal/23524319_mahasiswa_itb_ac_id/Documents/SEMESTER%202/Proyek%20Terapan/Kel%203/Setting%20files?csf=1&web=1&e=Lr60IF
+
+#### ML Engine
+nama database di neo4j berasal dari [namaOrganisasi][namaProject].
+nama dfile dataCollection sama dengan nama database. 
+contoh :
+- nama organisasi : idn
+- nama project : easyfix
+- nama database : idneasyfix
+- nama dataCollection : idneasyfix.jsonl
+
+posisikan datacolection dengan nama ([namaOrganisasi][namaProject].jsonl) di dir ml_engine/datasource. 
+
 
 #### Run Aplikasi
 
@@ -61,7 +77,9 @@ ReDoc: http://localhost:8000/redoc
     - POST /auth/send-password-reset — kirim email reset
     - PUT /auth/roles/{uid} — set roles (admin only)
 
-3. Search (Neo4j)
+3. Project  
+
+4. Search (Neo4j)
     - POST /search — body: {"query": "<keyword or sentence>"}
         Preprocess NLTK → query Neo4j (Bug–Commit–Developer)
         
