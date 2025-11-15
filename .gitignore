@@ -1,3 +1,6 @@
 /env
 __pycache
 ServiceAccountKey.json
+ml_engine/out_lda
+ml_engine/out_nlp
+log_*

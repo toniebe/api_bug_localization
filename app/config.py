@@ -2,6 +2,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+import os
+from typing import ClassVar
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / ".env"
@@ -19,7 +22,13 @@ class Settings(BaseSettings):
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
     NEO4J_PASSWORD: str = "neo4j2025"
-    NEO4J_DATABASE: str = "easyfix"
+    
+    ## ML Engine
+    BASE_DIR: ClassVar[Path] = Path(__file__).resolve().parent.parent.parent
+    ML_ENGINE_DIR: Path = Path(os.getenv("ML_ENGINE_DIR", BASE_DIR / "ml_engine")).resolve()
+
+    ML_PYTHON_BIN: str = os.getenv("ML_PYTHON_BIN", "python")
+    ML_MAIN_SCRIPT: str = os.getenv("ML_MAIN_SCRIPT", "main.py")
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_PATH),
