@@ -15,7 +15,7 @@
 
 import os, argparse, warnings, sys, datetime, importlib.util, re
 from typing import List, Set
-
+from lda_config import resolve_lda_params
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
@@ -321,6 +321,13 @@ def export_commit_commit_relations(df: pd.DataFrame, outdir: str):
     if buf:
         with open(out_path, "a", encoding="utf-8") as f:
             f.write("\n".join(buf) + "\n")
+            
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    return str(v).lower() in ("1", "true", "yes", "on")
 
 
 # ---------------------------- CLI ---------------------------- #
@@ -332,6 +339,7 @@ def main():
     parser = argparse.ArgumentParser(description="LDA topic modeling for EasyFix (scikit-learn)")
     parser.add_argument("--input", type=str, default=os.path.join(nlp_dir_default, "bugs_clean.csv"))
     parser.add_argument("--outdir", type=str, default=os.getenv("PATH_LDA_OUT", "out_lda"))
+    parser.add_argument("--auto_topics_num", type=str, default=str2bool(os.getenv("AUTO_TOPICS_NUM", "true")))
     parser.add_argument("--num_topics", type=int, default=int(os.getenv("NUM_TOPICS", "10")))
     parser.add_argument("--passes", type=int, default=int(os.getenv("PASSES", "12")))
     parser.add_argument("--auto_k", action="store_true")
@@ -375,8 +383,17 @@ def main():
     texts = df["clean_text"].fillna("").astype(str).tolist()
 
     log_write(log_fh, "[LDA] Training model…")
+    if args.auto_topics_num:
+        num_topics, passes = resolve_lda_params(
+        n_docs = len(texts),
+        logger=log_fh )
+    else:
+        num_topics = args.num_topics
+        passes = args.passes
+        
+    log_write(log_fh, f"[LDA] NUM TOPICS : {num_topics} - PASSES : {passes} ")
     lda_model, vocab, topic_mat, chosen_k = train_lda_sklearn(
-        texts, args.num_topics, args.passes, args.auto_k, random_state=42
+        texts, num_topics, passes, args.auto_k, random_state=42
     )
     log_write(log_fh, f"[LDA] Model trained. num_topics={chosen_k}")
 

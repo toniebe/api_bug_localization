@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 01_nlp_preprocess.py
-- Load Bugzilla JSONL (e.g., datasource/bugs2.jsonl)
+- Load Bugzilla JSONL (e.g., datasource/idneasyfix.jsonl)
 - Clean & normalize text (summary/description)
 - Output a CSV with clean_text and essential metadata for later modeling.
 """
 
 import os, re, string, json, argparse, warnings
 import pandas as pd
+from pathlib import Path
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -143,7 +144,7 @@ def list_to_semicolon(val):
 def main():
     parser = argparse.ArgumentParser(description="NLP preprocessing for EasyFix bug reports")
     # DEFAULT_DATASOURCE diambil dari .env atau fallback
-    parser.add_argument("--input", type=str, default=os.getenv("DATASOURCE", "datasource/bugs2.jsonl"), help="Path to Bugzilla JSONL")
+    parser.add_argument("--input", type=str, default=os.getenv("DATASOURCE", "datasource/idneasyfix.jsonl"), help="Path to Bugzilla JSONL")
     parser.add_argument("--outdir", type=str, default=os.getenv("PATH_NLP_OUT", "out_nlp"), help="Output directory")
     parser.add_argument(
         "--text-cols",
@@ -156,6 +157,11 @@ def main():
     os.makedirs(args.outdir, exist_ok=True)
 
     print(f"[NLP] Loading: {args.input}")
+    args.input = Path(args.input)
+
+    # If path is relative → attach to script's directory
+    if not args.input.is_absolute():
+        args.input = (Path(__file__).resolve().parent / args.input).resolve()
     df = load_jsonl(args.input)
 
     base_cols = [

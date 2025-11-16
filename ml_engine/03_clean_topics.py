@@ -99,9 +99,10 @@ def load_labels_json(path: str):
 
 def main():
     ap = argparse.ArgumentParser(description="Clean topics and label them; join labels into bugs file")
-    ap.add_argument("--topics", type=str, default="out_lda/topics.csv", help="Path to topics.csv")
-    ap.add_argument("--bugs", type=str, default="out_lda/bugs_with_topics.csv", help="Path to bugs_with_topics.csv")
-    ap.add_argument("--outdir", type=str, default="out_lda", help="Output directory")
+    ap.add_argument("--project", type=str, default="idnproject", help="Name of Project")
+    ap.add_argument("--topics", type=str, default="out_lda/idnproject/topics.csv", help="Path to topics.csv")
+    ap.add_argument("--bugs", type=str, default="out_lda/idnproject/bugs_with_topics.csv", help="Path to bugs_with_topics.csv")
+    ap.add_argument("--outdir", type=str, default="out_lda/idnproject", help="Output directory")
     ap.add_argument("--labels_json", type=str, default=None, help="Optional JSON mapping {topic_id: label}")
     ap.add_argument("--extra_noise", type=str, default=None, help="Comma-separated extra noise tokens")
     args = ap.parse_args()

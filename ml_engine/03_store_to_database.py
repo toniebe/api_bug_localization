@@ -2,20 +2,43 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import csv
 import argparse
+import importlib.util
 from pathlib import Path
 from neo4j import GraphDatabase
-import os, sys, argparse, importlib.util, csv
 
 HERE = Path(__file__).resolve().parent
 
+
+# ============================================================
+# CSV LOADER (ROBUST)
+# ============================================================
+
 def load_csv(path: Path):
+    """
+    Load CSV menjadi list[dict], aman untuk:
+    - file tidak ada -> []
+    - BOM (utf-8-sig)
+    - extra column (disimpan DictReader di key None -> kita buang & warning)
+    """
     if not path.exists():
         print(f"[WARN] CSV not found: {path}")
         return []
-    with path.open("r", encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
+
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        rows = []
+        for i, row in enumerate(reader, start=1):
+            # kalau ada kolom ekstra, DictReader simpan di key None
+            if None in row:
+                extra = row.pop(None)
+                print(f"[WARN] {path.name}: line {i} has extra columns -> {extra}")
+            rows.append(row)
+
+    print(f"[DEBUG] load_csv: {path} -> {len(rows)} rows")
+    return rows
 
 
 # ---------- helper ambil log dari main.py ----------
@@ -32,11 +55,11 @@ def get_main_module():
 
 def neo4j_connect(uri: str, user: str, password: str, db_name: str | None = None):
     try:
-        from neo4j import GraphDatabase
+        from neo4j import GraphDatabase as _GD
     except ImportError as e:
         raise RuntimeError(f"neo4j driver not installed: {e}")
 
-    driver = GraphDatabase.driver(uri, auth=(user, password))
+    driver = _GD.driver(uri, auth=(user, password))
     try:
         if db_name:
             with driver.session(database=db_name) as session:
@@ -54,7 +77,7 @@ def neo4j_driver(uri, user, password):
 
 
 # ============================================================
-#  TOPIC: topics_cleaned.csv
+#  TOPIC: topics_cleaned.csv + bugs_with_labels.csv
 # ============================================================
 
 def neo4j_has_bug_bug(session):
@@ -96,7 +119,10 @@ def _import_topics_and_bugs(session, in_lda: Path, log_write, log_fh):
         """, rows=topics_rows)
         log_write(log_fh, f"[NEO4J][TOPIC] Stored/updated {len(topics_rows)} topics from topics_cleaned.csv")
     else:
-        log_write(log_fh, "[NEO4J][TOPIC] topics_cleaned.csv not found or empty — skip Topic nodes.")
+        log_write(
+            log_fh,
+            f"[NEO4J][TOPIC] topics_cleaned.csv (path={topics_path}) not found or empty — skip Topic nodes."
+        )
 
     # --- Bugs ---
     if bugs_rows:
@@ -148,7 +174,10 @@ def _import_topics_and_bugs(session, in_lda: Path, log_write, log_fh):
         else:
             log_write(log_fh, "[NEO4J][BUG_TOPIC] No bug-topic mapping found in bugs_with_labels.csv")
     else:
-        log_write(log_fh, "[NEO4J][BUG] bugs_with_labels.csv not found or empty — skip Bug nodes.")
+        log_write(
+            log_fh,
+            f"[NEO4J][BUG] bugs_with_labels.csv (path={bugs_path}) not found or empty — skip Bug nodes."
+        )
 
 
 def import_bug_bug(session, csv_path: str, log_write, log_fh):
@@ -159,13 +188,14 @@ def import_bug_bug(session, csv_path: str, log_write, log_fh):
       - Bug–Topic relations (HAS_TOPIC)
       - Bug–Bug relations (SIMILAR_TO / DUPLICATE_OF / DEPENDS_ON / RELATED_TO)
     """
-    in_lda = Path(csv_path).parent
+    csv_path = Path(csv_path).resolve()
+    in_lda = csv_path.parent
 
     # 1) Pastikan Topics, Bugs, Bug-Topic masuk
     _import_topics_and_bugs(session, in_lda, log_write, log_fh)
 
     # 2) Bug–Bug relations
-    rows = load_csv(Path(csv_path))
+    rows = load_csv(csv_path)
     if not rows:
         log_write(log_fh, "[NEO4J][BUG_BUG] bug_bug_relations.csv empty — skip.")
         return
@@ -222,6 +252,10 @@ def import_bug_bug(session, csv_path: str, log_write, log_fh):
     log_write(log_fh, f"[NEO4J][BUG_BUG] Total bug-bug relations stored: {total}")
 
 
+# ============================================================
+# BUG–DEVELOPER
+# ============================================================
+
 def neo4j_has_bug_developer(session):
     result = session.run("""
         MATCH (:Bug)-[r:REPORTED_BY|ASSIGNED_TO|WORKED_BY]->(:Developer)
@@ -232,16 +266,37 @@ def neo4j_has_bug_developer(session):
 
 
 def import_bug_developer(session, csv_path: str, log_write, log_fh):
-    in_lda = Path(csv_path).parent
+    csv_path = Path(csv_path).resolve()
+    in_lda = csv_path.parent
 
-    rows = load_csv(Path(csv_path))
+    rows = load_csv(csv_path) or []
+
+    log_write(
+        log_fh,
+        f"[NEO4J][BUG_DEV][DEBUG] load_csv({csv_path}) -> {len(rows)} rows"
+    )
+
     if not rows:
-        log_write(log_fh, "[NEO4J][BUG_DEV] bug_developer_relations.csv empty — skip.")
+        if not csv_path.exists():
+            log_write(
+                log_fh,
+                f"[NEO4J][BUG_DEV] bug_developer_relations.csv NOT FOUND (path={csv_path}) — skip."
+            )
+        else:
+            log_write(
+                log_fh,
+                f"[NEO4J][BUG_DEV] bug_developer_relations.csv EMPTY (0 rows) (path={csv_path}) — skip."
+            )
         return
 
     # OPTIONAL: kalau ada developers.csv, import properti tambahan
     developers_csv = in_lda / "developers.csv"
-    dev_rows = load_csv(developers_csv)
+    dev_rows = load_csv(developers_csv) or []
+    log_write(
+        log_fh,
+        f"[NEO4J][BUG_DEV][DEBUG] load_csv({developers_csv}) -> {len(dev_rows)} rows"
+    )
+
     if dev_rows:
         for r in dev_rows:
             dev_id = r.get("dev_id") or r.get("developer_id") or r.get("email")
@@ -307,6 +362,11 @@ def import_bug_developer(session, csv_path: str, log_write, log_fh):
 
     log_write(log_fh, f"[NEO4J][BUG_DEV] Total bug-developer relations stored: {total}")
 
+
+# ============================================================
+# BUG–COMMIT
+# ============================================================
+
 def neo4j_has_bug_commit(session):
     result = session.run("""
         MATCH (:Bug)-[r:FIXED_BY]->(:Commit)
@@ -319,14 +379,68 @@ def neo4j_has_bug_commit(session):
 def import_bug_commit(session, csv_path: str, log_write, log_fh):
     in_lda = Path(csv_path).parent
 
-    rows = load_csv(Path(csv_path))
+    # --- PARSE bug_commit_relations.csv secara manual ---
+    path = Path(csv_path)
+    if not path.exists():
+        log_write(log_fh, "[NEO4J][BUG_COMMIT] bug_commit_relations.csv not found — skip.")
+        return
+
+    rows = []
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        # baca & buang header
+        header = f.readline().strip()
+
+        for lineno, line in enumerate(f, start=2):
+            line = line.rstrip("\n")
+            if not line:
+                continue
+
+            parts = line.split(",")
+
+            if len(parts) < 4:
+                log_write(
+                    log_fh,
+                    f"[NEO4J][BUG_COMMIT][WARN] line {lineno} malformed (expected >=4 cols): {line}",
+                )
+                continue
+
+            # 4 kolom pertama sesuai header:
+            # bug_id, commit_id, source, raw_value
+            bug_id    = parts[0]
+            commit_id = parts[1]
+            source    = parts[2]
+            raw_value = parts[3]
+
+            extras = parts[4:]  # bisa kosong, 1 elemen (' a=testonly'), atau 2 elemen (msg + flag)
+
+            message = None
+            flag    = None
+
+            if extras:
+                last = extras[-1].strip()
+                if last.startswith("a="):
+                    flag = last
+                    if len(extras) > 1:
+                        message = ",".join(extras[:-1]).strip()
+                else:
+                    message = ",".join(extras).strip()
+
+            rows.append({
+                "bug_id": bug_id,
+                "commit_id": commit_id,
+                "source": source,
+                "raw_value": raw_value,
+                "message": message,
+                "flag": flag,
+            })
+
     if not rows:
-        log_write(log_fh, "[NEO4J][BUG_COMMIT] bug_commit_relations.csv empty — skip.")
+        log_write(log_fh, "[NEO4J][BUG_COMMIT] bug_commit_relations.csv no valid rows — skip.")
         return
 
     # OPTIONAL: Commit metadata dari commits.csv (kalau ada)
     commits_csv = in_lda / "commits.csv"
-    commit_rows = load_csv(commits_csv)
+    commit_rows = load_csv(commits_csv) or []
     if commit_rows:
         for r in commit_rows:
             cid = r.get("commit_id") or r.get("hash")
@@ -338,13 +452,15 @@ def import_bug_commit(session, csv_path: str, log_write, log_fh):
         """, rows=commit_rows)
         log_write(log_fh, f"[NEO4J][COMMIT] Stored/updated {len(commit_rows)} commits from commits.csv")
 
-    # Minimal commit node dari relasi
+    # Minimal commit node dari bug_commit_relations
     session.run("""
         UNWIND $rows AS row
         MERGE (c:Commit {commit_id: row.commit_id})
-        ON CREATE SET c.source = row.source,
-                      c.raw_value = row.raw_value
-        ON MATCH SET c.last_source = row.source
+        ON CREATE SET c.source    = row.source,
+                      c.raw_value = row.raw_value,
+                      c.message   = row.message,
+                      c.flag      = row.flag
+        ON MATCH SET  c.last_source = row.source
     """, rows=rows)
 
     # Relasi Bug–Commit
@@ -353,12 +469,18 @@ def import_bug_commit(session, csv_path: str, log_write, log_fh):
         MATCH (b:Bug {bug_id: row.bug_id})
         MATCH (c:Commit {commit_id: row.commit_id})
         MERGE (b)-[r:FIXED_BY]->(c)
-        SET r.source = row.source,
-            r.raw_value = row.raw_value
+        SET r.source    = row.source,
+            r.raw_value = row.raw_value,
+            r.message   = row.message,
+            r.flag      = row.flag
     """, rows=rows)
 
     log_write(log_fh, f"[NEO4J][BUG_COMMIT] Stored {len(rows)} bug-commit FIXED_BY relations")
 
+
+# ============================================================
+# COMMIT–COMMIT
+# ============================================================
 
 def neo4j_has_commit_commit(session):
     result = session.run("""
@@ -370,19 +492,64 @@ def neo4j_has_commit_commit(session):
 
 
 def import_commit_commit(session, csv_path: str, log_write, log_fh):
-    rows = load_csv(Path(csv_path))
-    if not rows:
-        log_write(log_fh, "[NEO4J][COMMIT_COMMIT] commit_commit_relations.csv empty — skip.")
+    path = Path(csv_path)
+    if not path.exists():
+        log_write(log_fh, "[NEO4J][COMMIT_COMMIT] commit_commit_relations.csv not found — skip.")
         return
 
-    # Asumsi kolom: commit_id_source, commit_id_target, score, source (sesuaikan kalau beda)
+    rows = []
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        # baca header, tapi kita parse manual baris-baris berikutnya
+        header = f.readline().strip()
+
+        for lineno, line in enumerate(f, start=2):
+            line = line.rstrip("\n")
+            if not line:
+                continue
+
+            parts = line.split(",")
+
+            if len(parts) < 5:
+                log_write(
+                    log_fh,
+                    f"[NEO4J][COMMIT_COMMIT][WARN] line {lineno} malformed (expected >=5 cols): {line}",
+                )
+                continue
+
+            # pola: [src] [..... target .....] [relation] [score] [source]
+            commit_id_source = parts[0]
+            relation         = parts[-3]
+            score_str        = parts[-2]
+            source           = parts[-1]
+
+            # semua yang di tengah digabung lagi jadi 1 string
+            commit_id_target = ",".join(parts[1:-3])
+
+            try:
+                score = float(score_str)
+            except Exception:
+                score = None
+
+            rows.append({
+                "commit_id_source": commit_id_source,
+                "commit_id_target": commit_id_target,
+                "relation": relation,
+                "score": score,
+                "source": source,
+            })
+
+    if not rows:
+        log_write(log_fh, "[NEO4J][COMMIT_COMMIT] no valid rows — skip.")
+        return
+
     session.run("""
         UNWIND $rows AS row
         MERGE (c1:Commit {commit_id: row.commit_id_source})
         MERGE (c2:Commit {commit_id: row.commit_id_target})
         MERGE (c1)-[r:RELATED_COMMIT]->(c2)
-        SET r.score = row.score,
-            r.source = row.source
+        SET r.score   = row.score,
+            r.source  = row.source,
+            r.relation = row.relation
     """, rows=rows)
 
     log_write(log_fh, f"[NEO4J][COMMIT_COMMIT] Stored {len(rows)} commit-commit relations")
@@ -418,9 +585,31 @@ def main():
     log_write(log_fh, "[NEO4J] === Store to database started ===")
     log_write(log_fh, f"[NEO4J] using database: {db_name}")
 
-    if not os.path.isdir(args.in_lda):
-        log_write(log_fh, "[NEO4J][ERROR] LDA output directory not found")
-        sys.exit(1)
+    # normalisasi in_lda jadi Path absolut
+    args.in_lda = Path(args.in_lda)
+    if not args.in_lda.is_absolute():
+        args.in_lda = (Path(__file__).resolve().parent / args.in_lda).resolve()
+
+    exists = args.in_lda.exists()
+    is_dir = args.in_lda.is_dir()
+    log_write(
+        log_fh,
+        f"[NEO4J] Using LDA directory: {args.in_lda} (exists={exists}, is_dir={is_dir})"
+    )
+
+    # Jangan langsung exit, biarkan cek per-file yang menangani
+    if not exists:
+        log_write(
+            log_fh,
+            f"[NEO4J][WARN] LDA output path does not exist yet (path={args.in_lda}); "
+            "file-level checks will handle missing files."
+        )
+    elif not is_dir:
+        log_write(
+            log_fh,
+            f"[NEO4J][WARN] LDA path exists but is not a directory (path={args.in_lda}); "
+            "file-level checks will handle missing files."
+        )
 
     # connect
     try:
@@ -439,40 +628,40 @@ def main():
     # imports
     with driver.session(database=db_name) as session:
         # 1) bug-bug
-        p = os.path.join(args.in_lda, "bug_bug_relations.csv")
+        p = args.in_lda / "bug_bug_relations.csv"
         if neo4j_has_bug_bug(session):
             log_write(log_fh, "[NEO4J] bug-bug relations already exist — skip.")
-        elif os.path.exists(p):
-            import_bug_bug(session, p, log_write, log_fh)
+        elif p.exists():
+            import_bug_bug(session, str(p), log_write, log_fh)
         else:
-            log_write(log_fh, "[NEO4J] bug_bug_relations.csv not found — skip.")
+            log_write(log_fh, f"[NEO4J] bug_bug_relations.csv (path={p}) not found — skip.")
 
         # 2) bug-developer
-        p = os.path.join(args.in_lda, "bug_developer_relations.csv")
+        p = args.in_lda / "bug_developer_relations.csv"
         if neo4j_has_bug_developer(session):
             log_write(log_fh, "[NEO4J] bug-developer relations already exist — skip.")
-        elif os.path.exists(p):
-            import_bug_developer(session, p, log_write, log_fh)
+        elif p.exists():
+            import_bug_developer(session, str(p), log_write, log_fh)
         else:
-            log_write(log_fh, "[NEO4J] bug_developer_relations.csv not found — skip.")
+            log_write(log_fh, f"[NEO4J] bug_developer_relations.csv (path={p}) not found — skip.")
 
         # 3) bug-commit
-        p = os.path.join(args.in_lda, "bug_commit_relations.csv")
+        p = args.in_lda / "bug_commit_relations.csv"
         if neo4j_has_bug_commit(session):
             log_write(log_fh, "[NEO4J] bug-commit relations already exist — skip.")
-        elif os.path.exists(p):
-            import_bug_commit(session, p, log_write, log_fh)
+        elif p.exists():
+            import_bug_commit(session, str(p), log_write, log_fh)
         else:
-            log_write(log_fh, "[NEO4J] bug_commit_relations.csv not found — skip.")
+            log_write(log_fh, f"[NEO4J] bug_commit_relations.csv (path={p}) not found — skip.")
 
         # 4) commit-commit
-        p = os.path.join(args.in_lda, "commit_commit_relations.csv")
+        p = args.in_lda / "commit_commit_relations.csv"
         if neo4j_has_commit_commit(session):
             log_write(log_fh, "[NEO4J] commit-commit relations already exist — skip.")
-        elif os.path.exists(p):
-            import_commit_commit(session, p, log_write, log_fh)
+        elif p.exists():
+            import_commit_commit(session, str(p), log_write, log_fh)
         else:
-            log_write(log_fh, "[NEO4J] commit_commit_relations.csv not found — skip.")
+            log_write(log_fh, f"[NEO4J] commit_commit_relations.csv (path={p}) not found — skip.")
 
     driver.close()
     log_write(log_fh, "[NEO4J] === Store to database finished ===")
