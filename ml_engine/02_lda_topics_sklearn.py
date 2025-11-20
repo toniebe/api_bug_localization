@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-02_lda_topics.py  (gensim version)
+02_lda_topics.py  (cleaned)
 - Read CSV from 01_nlp_preprocess.py (bugs_clean.csv)
-- Train LDA (gensim)
+- Train LDA (sklearn)
 - Export:
     1) topics.csv
     2) bugs_with_topics.csv
@@ -11,34 +11,28 @@
     4) bug_developer_relations.csv
     5) bug_commit_relations.csv
     6) commit_commit_relations.csv
-    7) commits.csv
 """
 
 import os, argparse, warnings, sys, datetime, importlib.util, re
 from typing import List, Set
-
+from lda_config import resolve_lda_params
 import numpy as np
 import pandas as pd
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
-
-from gensim import corpora, models
-
-from lda_config import resolve_lda_params
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # --- load .env ---
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-
-
 def load_env():
     # 1) coba python-dotenv
     loaded = False
     try:
         from dotenv import load_dotenv
-
         # coba yang CWD
         load_dotenv()
         # coba yang lokasi file ini
@@ -63,7 +57,6 @@ def load_env():
                     v = v.strip()
                     os.environ.setdefault(k, v)
 
-
 load_env()
 
 DEFAULT_SIM_THRESHOLD = 0.60
@@ -83,93 +76,64 @@ def get_main_module():
     return main_mod
 
 
-# ---------------------------- Core training (gensim) ---------------------------- #
+# ---------------------------- Core training ---------------------------- #
 
-def _tokenize_clean_text(texts: List[str]) -> List[List[str]]:
-    """
-    clean_text sudah dipreproses (spasi antar token).
-    Kita cukup split per spasi.
-    """
-    return [str(t).split() for t in texts]
-
-
-def _build_dictionary(tokenized_docs: List[List[str]]):
-    """
-    Mirip CountVectorizer(max_df=0.5, min_df=3):
-    - no_below=3  (muncul di >=3 dokumen)
-    - no_above=0.5 (muncul di <= 50% dokumen)
-    """
-    dictionary = corpora.Dictionary(tokenized_docs)
-    dictionary.filter_extremes(no_below=3, no_above=0.5)
-    dictionary.compactify()
-    return dictionary
-
-
-def _build_corpus(dictionary, tokenized_docs):
-    return [dictionary.doc2bow(doc) for doc in tokenized_docs]
-
-
-def _fit_lda_gensim(corpus, dictionary, num_topics=10, passes=12, random_state=42):
-    """
-    Train LDA menggunakan gensim.models.LdaModel.
-    """
-    lda_model = models.LdaModel(
-        corpus=corpus,
-        id2word=dictionary,
-        num_topics=num_topics,
-        passes=passes,
-        random_state=random_state,
-        eval_every=None,
+def _build_vectorizer():
+    # clean_text sudah dipreproses; tokenisasi per kata
+    return CountVectorizer(
+        max_df=0.5,
+        min_df=3,
+        token_pattern=r"(?u)\b\w+\b"
     )
-    return lda_model
 
 
-def _doc_topic_matrix(lda_model, corpus, num_topics: int) -> np.ndarray:
-    """
-    Konversi distribusi topic tiap dokumen ke bentuk dense matrix:
-    shape = (n_docs, num_topics)
-    """
-    n_docs = len(corpus)
-    mat = np.zeros((n_docs, num_topics), dtype=np.float32)
-    for i, bow in enumerate(corpus):
-        doc_topics = lda_model.get_document_topics(bow, minimum_probability=0.0)
-        for tid, prob in doc_topics:
-            mat[i, tid] = prob
-    return mat
-
-
-def train_lda_gensim(texts, num_topics=10, passes=12, auto_k=False, random_state=42):
-    """
-    Wrapper utama untuk training LDA dengan gensim.
-    auto_k saat ini diabaikan (param num_topics sudah ditentukan oleh resolve_lda_params).
-    """
-    tokenized_docs = _tokenize_clean_text(texts)
-    dictionary = _build_dictionary(tokenized_docs)
-    corpus = _build_corpus(dictionary, tokenized_docs)
-
-    lda_model = _fit_lda_gensim(
-        corpus=corpus,
-        dictionary=dictionary,
-        num_topics=num_topics,
-        passes=passes,
+def _fit_lda(X, n_components=10, max_iter=12, random_state=42):
+    lda = LatentDirichletAllocation(
+        n_components=n_components,
+        max_iter=max_iter,
+        learning_method="batch",
         random_state=random_state,
+        evaluate_every=-1,
     )
-    topic_mat = _doc_topic_matrix(lda_model, corpus, num_topics)
-    chosen_k = num_topics
-    return lda_model, dictionary, topic_mat, chosen_k
+    lda.fit(X)
+    return lda
+
+
+def _choose_k_auto(X, base_k=10, max_iter=12, random_state=42):
+    """pilih K dengan perplexity di holdout"""
+    X_train, X_val = train_test_split(X, test_size=0.2, random_state=random_state, shuffle=True)
+    ks = list(range(max(3, base_k - 4), base_k + 5))
+    best_k, best_ppx, best_model = None, float("inf"), None
+    for k in ks:
+        lda = _fit_lda(X_train, n_components=k, max_iter=max_iter, random_state=random_state)
+        total_words = X_val.sum()
+        ppx = np.exp(-lda.score(X_val) / total_words) if total_words > 0 else np.inf
+        if ppx < best_ppx:
+            best_k, best_ppx, best_model = k, ppx, lda
+    return best_model, best_k
+
+
+def train_lda_sklearn(texts, num_topics=10, passes=12, auto_k=False, random_state=42):
+    vectorizer = _build_vectorizer()
+    X = vectorizer.fit_transform(texts)
+    if auto_k:
+        lda_model, chosen_k = _choose_k_auto(X, base_k=num_topics, max_iter=passes, random_state=random_state)
+    else:
+        lda_model = _fit_lda(X, n_components=num_topics, max_iter=passes, random_state=random_state)
+        chosen_k = num_topics
+    doc_topic = lda_model.transform(X).astype(np.float32)
+    vocab = vectorizer.get_feature_names_out()
+    return lda_model, vocab, doc_topic, chosen_k
 
 
 # ---------------------------- Exports ---------------------------- #
 
-def export_topics_gensim(lda_model, dictionary, outdir, topn=12):
-    """
-    Export top terms per topic ke topics.csv menggunakan gensim LdaModel.
-    """
+def export_topics_sklearn(lda_model, vocab, outdir, topn=12):
     rows = []
-    num_topics = lda_model.num_topics
-    for k in range(num_topics):
-        topic_terms = lda_model.get_topic_terms(k, topn=topn)
-        terms = [dictionary[tid] for tid, _ in topic_terms]
+    comps = lda_model.components_
+    for k, topic_vec in enumerate(comps):
+        top_idx = topic_vec.argsort()[:-topn-1:-1]
+        terms = [str(vocab[i]) for i in top_idx]
         rows.append({"topic_id": k, "terms": ", ".join(terms)})
     pd.DataFrame(rows).to_csv(os.path.join(outdir, "topics.csv"), index=False)
 
@@ -193,14 +157,12 @@ def _split_semicolon(val) -> List[str]:
     return [x.strip() for x in str(val).split(";") if x.strip()]
 
 
-def export_bug_bug_relations(
-    df: pd.DataFrame,
-    topic_mat: np.ndarray,
-    sim_th: float,
-    dup_th: float,
-    outdir: str,
-    chunk_flush: int = 100_000,
-):
+def export_bug_bug_relations(df: pd.DataFrame,
+                             topic_mat: np.ndarray,
+                             sim_th: float,
+                             dup_th: float,
+                             outdir: str,
+                             chunk_flush: int = 100_000):
     """
     (1) LDA-based similarity (similar / duplicate)
     (2) Explicit deps dari kolom 'depends_on' -> relation 'depends_on'
@@ -273,7 +235,6 @@ def export_bug_developer_relations(df: pd.DataFrame, outdir: str):
 
 
 _commit_rev_regex = re.compile(r"/rev/([0-9a-fA-F]+)$")
-
 
 def _normalize_commit_id(val: str) -> str:
     if not isinstance(val, str):
@@ -360,72 +321,7 @@ def export_commit_commit_relations(df: pd.DataFrame, outdir: str):
     if buf:
         with open(out_path, "a", encoding="utf-8") as f:
             f.write("\n".join(buf) + "\n")
-
-
-def export_commits_csv(df: pd.DataFrame, outdir: str):
-    """
-    Generate commits.csv (satu baris per commit_id) dengan metadata:
-    - commit_refs      -> commit_ref
-    - commit_messages  -> message & commit_messages
-    - files_changed    -> files_changed
-
-    commit_id HARUS konsisten dengan:
-      - export_bug_commit_relations
-      - export_commit_commit_relations
-    """
-    commits = {}
-
-    def ensure_commit(cid: str):
-        if cid not in commits:
-            commits[cid] = {
-                "commit_id": cid,
-                "message": set(),
-                "commit_messages": set(),
-                "commit_ref": set(),
-                "files_changed": set(),
-            }
-        return commits[cid]
-
-    # iterasi semua bug row di bugs_clean.csv
-    for _, row in df.iterrows():
-        # 1) commit_refs -> commit_ref
-        for c in _split_semicolon(row.get("commit_refs")):
-            cid = _normalize_commit_id(c)
-            if cid:
-                rec = ensure_commit(cid)
-                rec["commit_ref"].add(c)
-
-        # 2) commit_messages -> message & commit_messages
-        for m in _split_semicolon(row.get("commit_messages")):
-            cid = "msg_" + _normalize_commit_id(m[:50])
-            rec = ensure_commit(cid)
-            rec["message"].add(m)
-            rec["commit_messages"].add(m)
-
-        # 3) files_changed -> files_changed
-        for fp in _split_semicolon(row.get("files_changed")):
-            cid = "file_" + _normalize_commit_id(fp)
-            rec = ensure_commit(cid)
-            rec["files_changed"].add(fp)
-
-    if not commits:
-        # tidak ada commit info sama sekali, skip
-        return
-
-    rows = []
-    for cid, data in commits.items():
-        rows.append({
-            "commit_id": cid,
-            "message": "; ".join(sorted(data["message"])) if data["message"] else "",
-            "commit_messages": "; ".join(sorted(data["commit_messages"])) if data["commit_messages"] else "",
-            "commit_ref": "; ".join(sorted(data["commit_ref"])) if data["commit_ref"] else "",
-            "files_changed": "; ".join(sorted(data["files_changed"])) if data["files_changed"] else "",
-        })
-
-    commits_df = pd.DataFrame(rows)
-    commits_df.to_csv(os.path.join(outdir, "commits.csv"), index=False)
-
-
+            
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -440,7 +336,7 @@ def main():
     # ambil default dari .env supaya align dengan main.py kamu
     nlp_dir_default = os.getenv("PATH_NLP_OUT", "out_nlp")
 
-    parser = argparse.ArgumentParser(description="LDA topic modeling for EasyFix (gensim)")
+    parser = argparse.ArgumentParser(description="LDA topic modeling for EasyFix (scikit-learn)")
     parser.add_argument("--input", type=str, default=os.path.join(nlp_dir_default, "bugs_clean.csv"))
     parser.add_argument("--outdir", type=str, default=os.getenv("PATH_LDA_OUT", "out_lda"))
     parser.add_argument("--auto_topics_num", type=str, default=str2bool(os.getenv("AUTO_TOPICS_NUM", "true")))
@@ -448,16 +344,8 @@ def main():
     parser.add_argument("--passes", type=int, default=int(os.getenv("PASSES", "12")))
     parser.add_argument("--auto_k", action="store_true")
     parser.add_argument("--topn_terms", type=int, default=12)
-    parser.add_argument(
-        "--sim_threshold",
-        type=float,
-        default=float(os.getenv("SIM_THRESHOLD", str(DEFAULT_SIM_THRESHOLD))),
-    )
-    parser.add_argument(
-        "--dup_threshold",
-        type=float,
-        default=float(os.getenv("DUP_THRESHOLD", str(DEFAULT_DUP_THRESHOLD))),
-    )
+    parser.add_argument("--sim_threshold", type=float, default=float(os.getenv("SIM_THRESHOLD", str(DEFAULT_SIM_THRESHOLD))))
+    parser.add_argument("--dup_threshold", type=float, default=float(os.getenv("DUP_THRESHOLD", str(DEFAULT_DUP_THRESHOLD))))
     parser.add_argument("--log_path", type=str, default=None)
     args = parser.parse_args()
 
@@ -484,7 +372,7 @@ def main():
             except Exception as e:
                 print(f"[WARN] Could not open default log: {e}")
 
-    log_write(log_fh, f"[LDA] === Starting LDA (gensim) ===")
+    log_write(log_fh, f"[LDA] === Starting LDA ===")
     log_write(log_fh, f"[LDA] input={args.input} outdir={args.outdir} num_topics={args.num_topics}")
 
     df = pd.read_csv(args.input)
@@ -497,22 +385,20 @@ def main():
     log_write(log_fh, "[LDA] Training model…")
     if args.auto_topics_num:
         num_topics, passes = resolve_lda_params(
-            n_docs=len(texts),
-            logger=log_fh,
-        )
+        n_docs = len(texts),
+        logger=log_fh )
     else:
         num_topics = args.num_topics
         passes = args.passes
-
+        
     log_write(log_fh, f"[LDA] NUM TOPICS : {num_topics} - PASSES : {passes} ")
-
-    lda_model, dictionary, topic_mat, chosen_k = train_lda_gensim(
-        texts, num_topics=num_topics, passes=passes, auto_k=args.auto_k, random_state=42
+    lda_model, vocab, topic_mat, chosen_k = train_lda_sklearn(
+        texts, num_topics, passes, args.auto_k, random_state=42
     )
     log_write(log_fh, f"[LDA] Model trained. num_topics={chosen_k}")
 
     log_write(log_fh, "[LDA] Exporting topics & tables…")
-    export_topics_gensim(lda_model, dictionary, args.outdir, args.topn_terms)
+    export_topics_sklearn(lda_model, vocab, args.outdir, args.topn_terms)
     export_bug_table(df, topic_mat, args.outdir)
 
     log_write(log_fh, "[LDA] Exporting relation CSVs…")
@@ -521,20 +407,14 @@ def main():
     export_bug_commit_relations(df, args.outdir)
     export_commit_commit_relations(df, args.outdir)
 
-    log_write(log_fh, "[LDA] Exporting commits.csv…")
-    export_commits_csv(df, args.outdir)
-
-    # save model meta (kompatibel dengan versi sklearn lama: components, vocab, doc_topic)
-    components = lda_model.get_topics()  # shape (num_topics, vocab_size)
-    vocab = np.array([dictionary[i] for i in range(len(dictionary))], dtype=object)
-    np.savez(
-        os.path.join(args.outdir, "lda_sklearn_model_meta.npz"),
-        components=components,
-        vocab=vocab,
-        doc_topic=topic_mat,
-    )
+    # save model meta
+    np.savez(os.path.join(args.outdir, "lda_sklearn_model_meta.npz"),
+             components=lda_model.components_,
+             vocab=vocab,
+             doc_topic=topic_mat)
 
     log_write(log_fh, "[LDA] === Finished successfully ===")
+    # biarkan main.py yg nutup, tapi kalau file ini berdiri sendiri, gapapa ditutup
     if log_fh:
         try:
             log_fh.close()

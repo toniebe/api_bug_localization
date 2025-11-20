@@ -85,7 +85,7 @@ def neo4j_has_bug_bug(session):
     Cek apakah sudah ada relasi bug-bug di DB.
     """
     result = session.run("""
-        MATCH (b1:Bug)-[r:SIMILAR_TO|DUPLICATE_OF|DEPENDS_ON|RELATED_TO]->(b2:Bug)
+        MATCH (b1:Bug)-[r:SIMILAR_TO|DUPLICATE_OF|DEPENDS_ON]->(b2:Bug)
         RETURN count(r) AS c
     """)
     rec = result.single()
@@ -186,7 +186,7 @@ def import_bug_bug(session, csv_path: str, log_write, log_fh):
       - Topic nodes (topics_cleaned.csv)
       - Bug nodes (bugs_with_labels.csv)
       - Bug–Topic relations (HAS_TOPIC)
-      - Bug–Bug relations (SIMILAR_TO / DUPLICATE_OF / DEPENDS_ON / RELATED_TO)
+      - Bug–Bug relations (SIMILAR_TO / DUPLICATE_OF / DEPENDS_ON)
     """
     csv_path = Path(csv_path).resolve()
     in_lda = csv_path.parent
@@ -200,7 +200,7 @@ def import_bug_bug(session, csv_path: str, log_write, log_fh):
         log_write(log_fh, "[NEO4J][BUG_BUG] bug_bug_relations.csv empty — skip.")
         return
 
-    prepared_by_type = {"SIMILAR_TO": [], "DUPLICATE_OF": [], "DEPENDS_ON": [], "RELATED_TO": []}
+    prepared_by_type = {"SIMILAR_TO": [], "DUPLICATE_OF": [], "DEPENDS_ON": []}
 
     for r in rows:
         src = r.get("bug_id_source")
@@ -219,7 +219,7 @@ def import_bug_bug(session, csv_path: str, log_write, log_fh):
         elif "depend" in rel:
             rel_type = "DEPENDS_ON"
         else:
-            rel_type = "RELATED_TO"
+            rel_type = "NONE"
 
         try:
             s = float(score)
@@ -258,7 +258,7 @@ def import_bug_bug(session, csv_path: str, log_write, log_fh):
 
 def neo4j_has_bug_developer(session):
     result = session.run("""
-        MATCH (:Bug)-[r:REPORTED_BY|ASSIGNED_TO|WORKED_BY]->(:Developer)
+        MATCH (:Bug)-[r:REPORTED_BY|ASSIGNED_TO]->(:Developer)
         RETURN count(r) AS c
     """)
     rec = result.single()
@@ -332,7 +332,7 @@ def import_bug_developer(session, csv_path: str, log_write, log_fh):
         elif role in ("assigned_to", "assignee"):
             rel_type = "ASSIGNED_TO"
         else:
-            rel_type = "WORKED_BY"
+            rel_type = "NONE"
 
         prepared.append({
             "bug_id": bug_id,

@@ -3,7 +3,7 @@
 """
 01_nlp_preprocess.py
 - Load Bugzilla JSONL (e.g., datasource/idneasyfix.jsonl)
-- Clean & normalize text (summary/description)
+- Clean & normalize text (summary only for LDA)
 - Output a CSV with clean_text and essential metadata for later modeling.
 """
 
@@ -55,6 +55,7 @@ def ensure_nltk():
     except LookupError:
         nltk.download("stopwords")
 
+
 def build_stopwords():
     from nltk.corpus import stopwords
     sw = set()
@@ -78,30 +79,44 @@ def build_stopwords():
         sw.add(ch)
     return sw
 
+
 def clean_text(text, sw):
     if not isinstance(text, str):
         return ""
     text = text.lower()
-    # remove URLs, git hashes, explicit bug ids, keep short path markers minimally
+    # remove emails
+    text = re.sub(r"\S+@\S+\.\S+", " ", text)
+    # remove URLs
     text = re.sub(r"http\S+", " ", text)
-    text = re.sub(r"[a-f0-9]{7,40}", " ", text)           # git hashes and similar
-    text = re.sub(r"bug\s*#?\s*\d+", " ", text)           # explicit Bug IDs
-    text = re.sub(r"[^\w\s\./-]+", " ", text)             # keep / . - to preserve short paths
+    # remove git hashes / similar hex strings
+    text = re.sub(r"[a-f0-9]{7,40}", " ", text)
+    # explicit Bug IDs
+    text = re.sub(r"bug\s*#?\s*\d+", " ", text)
+    # keep only word, space, dot, slash, dash
+    text = re.sub(r"[^\w\s\./-]+", " ", text)
+
     tokens = re.split(r"\s+", text)
 
     def ok(tok):
-        if not tok: return False
-        if tok in sw: return False
-        if tok.isdigit(): return False
-        if len(tok) < 3: return False
+        if not tok:
+            return False
+        if tok in sw:
+            return False
+        if tok.isdigit():
+            return False
+        if len(tok) < 3:
+            return False
         # overly long path-ish tokens → drop
-        if tok.count(".") > 3 or tok.count("/") > 3: return False
+        if tok.count(".") > 3 or tok.count("/") > 3:
+            return False
+        # optional: drop domain-like tokens
+        if "." in tok and tok.endswith(("com", "org", "net")):
+            return False
         return True
 
     tokens = [t.strip(string.punctuation) for t in tokens]
     tokens = [t for t in tokens if ok(t)]
     return " ".join(tokens)
-
 
 
 # ---------- IO ----------
@@ -110,7 +125,7 @@ def load_jsonl(path):
     rows = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
-            line=line.strip()
+            line = line.strip()
             if not line:
                 continue
             rows.append(json.loads(line))
@@ -140,17 +155,27 @@ def list_to_semicolon(val):
     return val
 
 
-
 def main():
     parser = argparse.ArgumentParser(description="NLP preprocessing for EasyFix bug reports")
     # DEFAULT_DATASOURCE diambil dari .env atau fallback
-    parser.add_argument("--input", type=str, default=os.getenv("DATASOURCE", "datasource/idneasyfix.jsonl"), help="Path to Bugzilla JSONL")
-    parser.add_argument("--outdir", type=str, default=os.getenv("PATH_NLP_OUT", "out_nlp"), help="Output directory")
+    parser.add_argument(
+        "--input",
+        type=str,
+        default=os.getenv("DATASOURCE", "datasource/idneasyfix.jsonl"),
+        help="Path to Bugzilla JSONL",
+    )
+    parser.add_argument(
+        "--outdir",
+        type=str,
+        default=os.getenv("PATH_NLP_OUT", "out_nlp"),
+        help="Output directory",
+    )
+    # sekarang default hanya summary (yang dipakai untuk LDA)
     parser.add_argument(
         "--text-cols",
         type=str,
-        default=os.getenv("NLP_TEXT_COLS", "summary,product,component,commit_messages,files_changed"),
-        help="Comma-separated text columns to merge & clean"
+        default="summary",
+        help="Comma-separated text columns to merge & clean (default: summary only)",
     )
     args = parser.parse_args()
 
@@ -184,7 +209,7 @@ def main():
         "files_changed",
         "url",
     ]
-    
+
     # Ensure key cols exist
     for col in base_cols:
         if col not in df.columns:
@@ -193,6 +218,7 @@ def main():
     ensure_nltk()
     sw = build_stopwords()
 
+    # Only use selected text columns (default: summary only)
     text_cols = [c.strip() for c in args.text_cols.split(",") if c.strip()]
     if not text_cols:
         text_cols = ["summary"]
@@ -262,6 +288,7 @@ def main():
     out_path = os.path.join(args.outdir, "bugs_clean.csv")
     out[cols].to_csv(out_path, index=False)
     print(f"[NLP] Wrote {out_path}")
+
 
 if __name__ == "__main__":
     main()
