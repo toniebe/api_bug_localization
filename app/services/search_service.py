@@ -13,6 +13,26 @@ def _dbname(org: str, proj: str) -> str:
     return base[:63] if len(base) > 63 else base
 
 
+def _normalize_semicolon_or_list(value) -> List[str]:
+    """
+    Helper untuk handle property Neo4j yang bisa berupa:
+    - string "a; b; c"
+    - list ["a", "b", "c"]
+    - None
+    Output: list[str] yang sudah di-strip & buang kosong.
+    """
+    if value is None:
+        return []
+    # kalau string, split by ';'
+    if isinstance(value, str):
+        return [s.strip() for s in value.split(";") if s.strip()]
+    # kalau list/tuple/set, konversi ke string & strip
+    if isinstance(value, (list, tuple, set)):
+        return [str(s).strip() for s in value if str(s).strip()]
+    # fallback: anggap single value
+    return [str(value).strip()]
+
+
 async def search_relevant_bugs(
     organization: str,
     project: str,
@@ -62,6 +82,10 @@ async def search_relevant_bugs(
 
             bug_id = str(bug_node["bug_id"])
 
+            # --- normalize datetime ke string untuk Pydantic ---
+            created_raw = bug_node.get("creation_time")
+            created_at_str = str(created_raw) if created_raw is not None else None
+
             # ---------- BUG ----------
             bugs.append(
                 Bug(
@@ -69,7 +93,7 @@ async def search_relevant_bugs(
                     title=bug_node.get("summary"),
                     description=bug_node.get("clean_text"),
                     status=bug_node.get("status"),
-                    created_at=bug_node.get("creation_time"),
+                    created_at=created_at_str,
                     score=score,
                 )
             )
@@ -97,11 +121,12 @@ async def search_relevant_bugs(
                 ))
 
             # ---------- COMMITS ----------
-            messages_raw = bug_node.get("commit_messages") or ""
-            refs_raw = bug_node.get("commit_refs") or ""
-
-            messages = [m.strip() for m in messages_raw.split(";") if m.strip()]
-            refs = [u.strip() for u in refs_raw.split(";") if u.strip()]
+            messages = _normalize_semicolon_or_list(
+                bug_node.get("commit_messages")
+            )
+            refs = _normalize_semicolon_or_list(
+                bug_node.get("commit_refs")
+            )
 
             for idx, msg in enumerate(messages):
                 commit_id = f"{bug_id}_{idx}"
