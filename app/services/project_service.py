@@ -9,12 +9,14 @@ from typing import Dict, Any
 
 from neo4j import GraphDatabase
 from app.config import settings
+import requests
 
 # sudah ada sebelumnya:
 ML_ENGINE_DIR = Path(settings.ML_ENGINE_DIR)
 ML_PYTHON_BIN = settings.ML_PYTHON_BIN
 ML_MAIN_SCRIPT = settings.ML_MAIN_SCRIPT
 ML_DATASOURCE_BASE = ML_ENGINE_DIR / "datasource"
+R2_BASE_URL = getattr(settings, "R2_BASE_URL", None)
 
 def _slugify(s: str) -> str:
     s = s.strip().lower()
@@ -150,7 +152,35 @@ async def get_ml_status(organization_name: str, project_name: str):
     }
 
 
+def ensure_local_datasource(database_name: str) -> Path:
+    local_path = (ML_DATASOURCE_BASE / f"{database_name}.jsonl").resolve()
 
+    if local_path.exists():
+        return local_path
+
+    if not R2_BASE_URL:
+        raise RuntimeError(
+            f"Datasource {local_path} not found and R2_BASE_URL is not configured"
+        )
+   
+    remote_url = f"{R2_BASE_URL.rstrip('/')}/{database_name}.jsonl"
+
+    try:
+        resp = requests.get(remote_url, stream=True, timeout=120)
+        resp.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to download datasource from R2: {remote_url} ({e})"
+        )
+ 
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(local_path, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                f.write(chunk)
+
+    return local_path
 
 def check_ml_environment(database_name: str) -> Dict[str, Any]:
     """
@@ -175,13 +205,15 @@ def check_ml_environment(database_name: str) -> Dict[str, Any]:
         return result
 
     # 2) cek file datasource
-    datasource_path = ML_DATASOURCE_BASE / f"{database_name}.jsonl"
-    result["datasource_path"] = str(datasource_path)
-
-    if not datasource_path.exists():
+    try:
+        datasource_path = ensure_local_datasource(database_name)
+        result["datasource_path"] = str(datasource_path)
+        result["datasource_ok"] = True
+    except Exception as e:
         result["ok"] = False
         result["datasource_ok"] = False
-        # lanjut cek Neo4j juga supaya user dapat info lengkap
+        result["datasource_path"] = str(ML_DATASOURCE_BASE / f"{database_name}.jsonl")
+        result["datasource_error"] = str(e)
 
     # 3) cek koneksi Neo4j + database
     try:
