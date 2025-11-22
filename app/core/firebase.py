@@ -27,7 +27,6 @@ else:
         )
     cred_obj = credentials.Certificate(str(sa_path))
 
-# Inisialisasi Firebase Admin sekali saja
 if not firebase_admin._apps:
     firebase_admin.initialize_app(
         cred_obj,

@@ -7,9 +7,9 @@ from app.models.search import SearchBugsRequest, SearchBugsResponse
 from app.services.search_service import search_relevant_bugs  
 
 from app.deps import get_current_user
-
+from app.core.firebase import db
 router = APIRouter(prefix="/api/projects", tags=["search"])
-db = firestore.Client()
+
 
 @router.post(
     "/{organization}/{project}/search-bugs",

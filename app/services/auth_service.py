@@ -13,13 +13,14 @@ from app.models.auth import (
     LoginResponse, RegisterRequest, RegisterResponse,
     UpdateProfileIn, ChangePasswordIn, VerifyTokenIn, PasswordResetIn
 )
+from app.core.firebase import db
 
 # =======================
 # Identity Toolkit (REST)
 # =======================
 IDT_BASE = "https://identitytoolkit.googleapis.com/v1"
 FIREBASE_SIGNIN_URL = f"{IDT_BASE}/accounts:signInWithPassword"
-db = firestore.Client()
+
 
 # ---------- Core auth ----------
 
