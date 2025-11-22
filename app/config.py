@@ -20,9 +20,9 @@ class Settings(BaseSettings):
     FIREBASE_SERVICE_ACCOUNT_JSON: str | None = None
 
     #Neo4j
-    NEO4J_URI: str = "bolt://localhost:7687"
+    NEO4J_URI: str = "neo4j+s://645b1e00.databases.neo4j.io"
     NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str = "neo4j2025"
+    NEO4J_PASSWORD: str = "0m1WPrAf6_XpkamLxtSikQ_E8xzqWUYzYJk01IA3pnQ"
     
     ## ML Engine
     BASE_DIR: ClassVar[Path] = Path(__file__).resolve().parent.parent.parent
