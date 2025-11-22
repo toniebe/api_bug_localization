@@ -1,19 +1,40 @@
 from pathlib import Path
+import json
 import firebase_admin
 from firebase_admin import credentials, auth as fb_auth, firestore
 from app.config import settings
 
-# Validasi service account path biar error lebih jelas
-sa_path = Path(settings.GOOGLE_APPLICATION_CREDENTIALS)
-if not sa_path.exists():
-    raise RuntimeError(
-        f"Firebase service account JSON tidak ditemukan: {sa_path}. "
-        f"Atur GOOGLE_APPLICATION_CREDENTIALS di .env atau taruh file di lokasi tersebut."
-    )
+
+
+cred_obj = None
+
+if settings.FIREBASE_SERVICE_ACCOUNT_JSON:
+    try:
+        sa_info = json.loads(settings.FIREBASE_SERVICE_ACCOUNT_JSON)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            "FIREBASE_SERVICE_ACCOUNT_JSON bukan JSON yang valid"
+        ) from e
+
+    cred_obj = credentials.Certificate(sa_info)
+
+else:
+    # Validasi service account path biar error lebih jelas
+    sa_path = Path(settings.GOOGLE_APPLICATION_CREDENTIALS)
+    if not sa_path.exists():
+        raise RuntimeError(
+            f"Firebase service account JSON tidak ditemukan: {sa_path}. "
+            f"Set FIREBASE_SERVICE_ACCOUNT_JSON atau GOOGLE_APPLICATION_CREDENTIALS."
+        )
+
+    cred_obj = credentials.Certificate(str(sa_path))
+
 
 if not firebase_admin._apps:
-    cred = credentials.Certificate(str(sa_path))
-    firebase_admin.initialize_app(cred, {"projectId": settings.FIREBASE_PROJECT_ID})
+    firebase_admin.initialize_app(
+        cred_obj,
+        {"projectId": settings.FIREBASE_PROJECT_ID},
+    )
 
 db = firestore.client()
 auth = fb_auth

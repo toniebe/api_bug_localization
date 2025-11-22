@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: str | None = None
     GOOGLE_APPLICATION_CREDENTIALS: str = str(DEFAULT_SA_PATH)
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    FIREBASE_SERVICE_ACCOUNT_JSON: str | None = None
 
     #Neo4j
     NEO4J_URI: str = "bolt://localhost:7687"
