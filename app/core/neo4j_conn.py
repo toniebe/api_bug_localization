@@ -9,7 +9,6 @@ _auth = basic_auth(settings.NEO4J_USER, settings.NEO4J_PASSWORD)
 driver = GraphDatabase.driver(
     _uri,
     auth=_auth,
-    encrypted=False 
 )
 
 def get_session():
