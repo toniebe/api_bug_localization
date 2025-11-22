@@ -17,6 +17,7 @@ try:
     word_tokenize("test")
 except LookupError:
     nltk.download("punkt")
+    nltk.download("punkt_tab")
 
 _stop_words = set(stopwords.words("english"))
 _stemmer = PorterStemmer()

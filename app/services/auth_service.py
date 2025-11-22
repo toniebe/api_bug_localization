@@ -1,10 +1,10 @@
 # app/services/auth_service.py
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import httpx
 from fastapi import HTTPException
 from firebase_admin import firestore 
-from typing import Optional
 from fastapi import Header
+import asyncio
 from app.core.firebase import auth
 
 from app.config import settings
@@ -19,8 +19,40 @@ from app.models.auth import (
 # =======================
 IDT_BASE = "https://identitytoolkit.googleapis.com/v1"
 FIREBASE_SIGNIN_URL = f"{IDT_BASE}/accounts:signInWithPassword"
+db = firestore.Client()
 
 # ---------- Core auth ----------
+
+async def get_org_and_project_for_uid(uid: str) -> Tuple[Optional[str], Optional[str]]:
+    loop = asyncio.get_running_loop()
+
+    def _query():
+        org_q = (
+            db.collection("organizations")
+            .where("owner_uid", "==", uid)
+            .limit(1)
+        )
+        org_docs = list(org_q.stream())
+        if not org_docs:
+            return None, None
+
+        org_doc = org_docs[0]
+        org_slug = org_doc.id
+        org_name = org_doc.to_dict().get("organization_name", org_slug)
+
+        proj_q = org_doc.reference.collection("projects").limit(1)
+        proj_docs = list(proj_q.stream())
+
+        if not proj_docs:
+            return org_name, None
+
+        proj_doc = proj_docs[0]
+        project_name = proj_doc.id
+        return org_name, project_name
+
+    return await loop.run_in_executor(None, _query)
+
+
 async def password_login(email: str, password: str) -> LoginResponse:
     params = {"key": settings.FIREBASE_API_KEY}
     payload = {"email": email, "password": password, "returnSecureToken": True}
@@ -30,13 +62,17 @@ async def password_login(email: str, password: str) -> LoginResponse:
         detail = r.json().get("error", {}).get("message", "LOGIN_FAILED")
         raise HTTPException(status_code=400, detail=f"Firebase login error: {detail}")
     data = r.json()
+    org_name, project_name = await get_org_and_project_for_uid(data["localId"])
     return LoginResponse(
         id_token=data["idToken"],
         refresh_token=data["refreshToken"],
         expires_in=int(data["expiresIn"]),
         local_id=data["localId"],
         email=data["email"],
+        organization_name=org_name,
+        project_name=project_name,
     )
+
 
 def register_user(req: RegisterRequest) -> RegisterResponse:
     try:
