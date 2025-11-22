@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     GOOGLE_APPLICATION_CREDENTIALS: str = str(DEFAULT_SA_PATH)
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     FIREBASE_SERVICE_ACCOUNT_JSON: str | None = None
+    R2_BASE_URL: str | None = None
 
     #Neo4j
     NEO4J_URI: str = "neo4j+s://645b1e00.databases.neo4j.io"

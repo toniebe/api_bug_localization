@@ -10,6 +10,8 @@ from neo4j import GraphDatabase
 from firebase_admin import firestore
 from datetime import datetime
 
+import requests
+
 # ML Engine paths from config
 ML_ENGINE_DIR = Path(settings.ML_ENGINE_DIR)  
 ML_PYTHON_BIN = settings.ML_PYTHON_BIN
@@ -18,6 +20,38 @@ ML_MAIN_SCRIPT = settings.ML_MAIN_SCRIPT
 # Datasource base folder (adjust if needed)
 ML_DATASOURCE_BASE = ML_ENGINE_DIR / "datasource"
 
+R2_BASE_URL = getattr(settings, "R2_BASE_URL", None)
+
+
+def ensure_local_datasource(database_name: str) -> Path:
+    local_path = (ML_DATASOURCE_BASE / f"{database_name}.jsonl").resolve()
+
+    if local_path.exists():
+        return local_path
+
+    if not R2_BASE_URL:
+        raise RuntimeError(
+            f"Datasource {local_path} not found and R2_BASE_URL is not configured"
+        )
+   
+    remote_url = f"{R2_BASE_URL.rstrip('/')}/{database_name}.jsonl"
+
+    try:
+        resp = requests.get(remote_url, stream=True, timeout=120)
+        resp.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to download datasource from R2: {remote_url} ({e})"
+        )
+ 
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(local_path, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                f.write(chunk)
+
+    return local_path
 
 def _project_doc(org_slug: str, project_slug: str):
     return (
@@ -98,13 +132,15 @@ def check_ml_environment(database_name: str) -> Dict:
         return result
 
     # 2) cek file datasource
-    datasource_path = (ML_DATASOURCE_BASE / f"{database_name}.jsonl").resolve()
-    datasource_path = datasource_path.resolve()
-    result["datasource_path"] = str(datasource_path)
-
-    if not datasource_path.exists():
+    try:
+        datasource_path = ensure_local_datasource(database_name)
+        result["datasource_path"] = str(datasource_path)
+        result["datasource_ok"] = True
+    except Exception as e:
         result["ok"] = False
         result["datasource_ok"] = False
+        result["datasource_path"] = str(ML_DATASOURCE_BASE / f"{database_name}.jsonl")
+        result["datasource_error"] = str(e)
         # lanjut cek Neo4j juga, biar user dapat info lengkap
 
     # 3) cek Neo4j (URI & auth dari settings, nama DB = database_name dari Firestore)
@@ -152,17 +188,17 @@ def _run_pipeline_for_project(
         return
 
     # datasource file = datasource/<database_name>.jsonl
-    datasource_path = (ML_DATASOURCE_BASE / f"{database_name}.jsonl").resolve()
-
-
-    if not datasource_path.exists():
+    try:
+        datasource_path = ensure_local_datasource(database_name)
+    except Exception as e:
         _update_ml_status(org_slug, project_slug, {
             "import": "failed",
             "training": "failed",
             "stage": "FAILED",
-            "message": f"Datasource not found: {datasource_path}"
+            "message": f"Datasource error: {e}",
         })
         return
+
 
     # ENV untuk ML engine main.py
     env = os.environ.copy()
