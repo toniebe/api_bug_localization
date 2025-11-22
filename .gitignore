@@ -5,3 +5,4 @@ ml_engine/out_lda
 ml_engine/out_nlp
 log_*
 *.pyc
+.env

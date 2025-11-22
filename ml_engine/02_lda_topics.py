@@ -510,6 +510,28 @@ def main():
         texts, num_topics=num_topics, passes=passes, auto_k=args.auto_k, random_state=42
     )
     log_write(log_fh, f"[LDA] Model trained. num_topics={chosen_k}")
+    
+     # === Tambahan: simpan artefak model untuk dipakai online ===
+    log_write(log_fh, "[LDA] Saving model artifacts for online inference…")
+    dict_path = os.path.join(args.outdir, "lda_dictionary.dict")
+    model_path = os.path.join(args.outdir, "lda_model.gensim")
+    topic_mat_path = os.path.join(args.outdir, "topic_mat.npy")
+    bug_ids_path = os.path.join(args.outdir, "bug_ids.txt")
+
+    dictionary.save(dict_path)
+    lda_model.save(model_path)
+    np.save(topic_mat_path, topic_mat)
+
+    # Simpan urutan bug_id yang align dengan topic_mat
+    if "id" in df.columns:
+        with open(bug_ids_path, "w", encoding="utf-8") as f:
+            for v in df["id"].tolist():
+                f.write(f"{int(v)}\n")
+    else:
+        with open(bug_ids_path, "w", encoding="utf-8") as f:
+            for i in range(len(df)):
+                f.write(f"{i}\n")
+                
 
     log_write(log_fh, "[LDA] Exporting topics & tables…")
     export_topics_gensim(lda_model, dictionary, args.outdir, args.topn_terms)

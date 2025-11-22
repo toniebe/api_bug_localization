@@ -188,10 +188,6 @@ def main():
     neo4j_db     = (args.neo4j_db or env_neo4j_db)
 
     print(f"num_topics {num_topics}")
-    print(f"[DEBUG] input_path = {input_path}")
-    print(f"[DEBUG] nlp_out    = {nlp_out}")
-    print(f"[DEBUG] lda_out    = {lda_out}")
-    print(f"[DEBUG] log_dir    = {env_log_dir}")
 
     # ====== logging ======
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")

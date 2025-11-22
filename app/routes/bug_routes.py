@@ -1,9 +1,14 @@
 # app/routes/bug_routes.py
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
-from typing import Optional
-from app.deps import get_current_user
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
+from typing import Optional, List, Dict, Any
+
+from app.models.bug import BugIn, BugOut
 from app.services.bug_service import (
+    _dbname,
+    BugService,
+    get_bug_service,
     list_bugs,
     get_bug_detail,
     list_developers,
@@ -11,10 +16,16 @@ from app.services.bug_service import (
     list_topics,
 )
 
+from app.core.firebase import db        # ⬅️ PAKAI db DARI SINI, JANGAN DIOVERRIDE
+from firebase_admin import firestore
+
+from app.deps import get_current_user
+
 router = APIRouter(prefix="/api/bug", tags=["bug"])
 
 def _uid(u):
     return u["uid"] if isinstance(u, dict) else getattr(u, "uid", None)
+
 
 # ===== BUGS =====
 @router.get("/bugs", summary="Get all bugs (by org & project Neo4j db)")
@@ -150,3 +161,84 @@ async def api_list_topics(
         "limit": limit,
         "offset": offset,
     }
+
+
+# ===== ADD NEW BUG =====
+
+
+@router.post(
+    "/{organization}/{project}/addNewBug",
+    response_model=BugOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add new bug (authorized only). Runs NLP, LTM, and graph relations.",
+)
+async def add_new_bug_route(
+    organization: str,
+    project: str,
+    payload: BugIn,
+    current_user=Depends(get_current_user),
+    bug_service: BugService = Depends(get_bug_service)
+) -> BugOut:
+    """
+    Add new bug ke graph (authorized user only)
+    - Token required
+    - NLTK + LDA (LTM inference)
+    - Similar/duplicate detection
+    - Insert to Neo4j with relations
+    - Log ke Firestore nested: /organizations/{org}/projects/{project}/bug_logs
+    """
+
+    if not _uid(current_user):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    db_name = _dbname(organization, project)
+
+    # try:
+    # 1) Simpan bug ke Neo4j (via service)
+    bug = await bug_service.AddNewBug(
+        db_name=db_name,
+        organization=organization,
+        project=project,
+        bug=payload,
+    )
+
+    # 2) Logging ke Firestore (nested per org/project)
+    # try:
+    user_uid = _uid(current_user) or "unknown"
+
+    (
+        db.collection("organizations")
+        .document(organization)
+        .collection("projects")
+        .document(project)
+        .collection("bug_logs")
+        .add(
+            {
+                "user_uid": user_uid,
+                "organization": organization,
+                "project": project,
+                "db_name": db_name,
+                "bug_id": bug.bug_id,
+                "summary": bug.summary,
+                "status": bug.status,
+                "action": "ADD_BUG",
+                "created_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
+    )
+    # except Exception as log_err:
+    #     # jangan ganggu main flow kalau logging gagal
+    #     print(f"[WARN] Failed to log bug add to Firestore: {log_err}")
+
+    return bug
+
+    # except HTTPException:
+    #     raise
+
+    # except Exception as e:
+    #     # sementara: print ke log biar tahu 500-nya apa
+    #     print(f"[ERROR] addNewBug failed: {e!r}")
+    #     raise HTTPException(
+    #         status_code=500,
+    #         detail="Internal error processing new bug",
+    #     )
