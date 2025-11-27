@@ -620,10 +620,28 @@ def main():
 
     # constraints
     with driver.session(database=db_name) as session:
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (b:Bug) REQUIRE b.bug_id IS UNIQUE")
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (d:Developer) REQUIRE d.dev_id IS UNIQUE")
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (c:Commit) REQUIRE c.commit_id IS UNIQUE")
-    log_write(log_fh, "[NEO4J] constraints ensured")
+        session.run("""
+            CREATE CONSTRAINT bug_bug_id_unique
+            IF NOT EXISTS
+            ON (b:Bug)
+            ASSERT b.bug_id IS UNIQUE
+        """)
+
+        session.run("""
+            CREATE CONSTRAINT dev_dev_id_unique
+            IF NOT EXISTS
+            ON (d:Developer)
+            ASSERT d.dev_id IS UNIQUE
+        """)
+
+        session.run("""
+            CREATE CONSTRAINT commit_commit_id_unique
+            IF NOT EXISTS
+            ON (c:Commit)
+            ASSERT c.commit_id IS UNIQUE
+        """)
+
+        log_write(log_fh, "[NEO4J] constraints ensured")
 
     # imports
     with driver.session(database=db_name) as session:
