@@ -168,9 +168,51 @@ def update_profile_logic(user_uid: str, body: UpdateProfileIn) -> Dict[str, Any]
 async def change_password_logic(body: ChangePasswordIn) -> Dict[str, Any]:
     if not settings.FIREBASE_API_KEY:
         raise HTTPException(status_code=500, detail="FIREBASE_API_KEY belum di-set")
+
+    # 1) verify id_token -> ambil email
+    try:
+        decoded = auth.verify_id_token(body.id_token)
+        email = decoded.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="EMAIL_NOT_FOUND_IN_TOKEN")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"INVALID_ID_TOKEN: {e}")
+
+    # 2) re-auth ke Firebase pakai email + current_password
+    sign_in_url = f"{IDT_BASE}/accounts:signInWithPassword"
+    sign_in_params = {"key": settings.FIREBASE_API_KEY}
+    sign_in_payload = {
+        "email": email,
+        "password": body.current_password,
+        "returnSecureToken": True,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            sign_in_res = await client.post(
+                sign_in_url, params=sign_in_params, json=sign_in_payload
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"REAUTH_FAILED: {e}")
+
+    if sign_in_res.status_code != 200:
+        msg = sign_in_res.json().get("error", {}).get("message", "REAUTH_FAILED")
+        # misal: INVALID_PASSWORD
+        raise HTTPException(status_code=400, detail=msg)
+
+    fresh_id_token = sign_in_res.json().get("idToken")
+    if not fresh_id_token:
+        raise HTTPException(status_code=400, detail="NO_ID_TOKEN_FROM_REAUTH")
+
+    # 3) ganti password pakai idToken yang baru
     url = f"{IDT_BASE}/accounts:update"
     params = {"key": settings.FIREBASE_API_KEY}
-    payload = {"idToken": body.id_token, "password": body.new_password, "returnSecureToken": True}
+    payload = {
+        "idToken": fresh_id_token,
+        "password": body.new_password,
+        "returnSecureToken": True,
+    }
+
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.post(url, params=params, json=payload)
