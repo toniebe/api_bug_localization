@@ -60,13 +60,8 @@ class UpdateProfileIn(BaseModel):
 class ChangePasswordIn(BaseModel):
     id_token: str
     new_password: str
+    current_password: str  # <-- TAMBAHAN
 
-    @field_validator("new_password")
-    @classmethod
-    def min_len_pwd(cls, v):
-        if len(v) < 6:
-            raise ValueError("Password minimal 6 karakter.")
-        return v
 
 class PasswordResetIn(BaseModel):
     email: EmailStr
