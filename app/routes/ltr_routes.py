@@ -9,7 +9,7 @@ from app.services.recommendation_ltr_service import recommend_developers_ltr
 from app.deps import get_current_user
 
 router = APIRouter(
-    prefix="/{organization}/{project}/ltr",
+    prefix="/api/ltr/{organization}/{project}",
     tags=["ML Learning To Rank"],
 )
 

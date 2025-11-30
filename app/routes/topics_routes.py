@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.deps import get_current_user
 
 router = APIRouter(
-    prefix="/{organization}/{project}/topics",
+    prefix="/api/topics/{organization}/{project}",
     tags=["Topics"],
 )
 

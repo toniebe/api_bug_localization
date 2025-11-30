@@ -13,7 +13,7 @@ from app.deps import get_current_user
 from app.services.developer_topics_service import get_developer_topics
 
 router = APIRouter(
-    prefix="/{organization}/{project}/developers",
+    prefix="/api/developers/{organization}/{project}",
     tags=["Developers"],
 )
 
