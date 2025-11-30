@@ -82,86 +82,6 @@ async def api_bug_detail(
     }
 
 
-# ===== DEVELOPERS =====
-@router.get("/developers", summary="Get all developers (by org & project Neo4j db)")
-async def api_list_developers(
-    organization_name: str = Query(...),
-    project_name: str      = Query(...),
-    limit: int             = Query(50, ge=1, le=200),
-    offset: int            = Query(0, ge=0),
-    user=Depends(get_current_user),
-):
-    if not _uid(user):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    items = await list_developers(
-        organization_name=organization_name,
-        project_name=project_name,
-        limit=limit,
-        offset=offset,
-    )
-    return {
-        "status": "ok",
-        "organization_name": organization_name,
-        "project_name": project_name,
-        "items": items,
-        "limit": limit,
-        "offset": offset,
-    }
-
-
-@router.get("/developers/{dev_key}", summary="Get developer detail (by org & project Neo4j db)")
-async def api_developer_detail(
-    dev_key: str = Path(..., description="dev_id atau email"),
-    organization_name: str = Query(...),
-    project_name: str      = Query(...),
-    user=Depends(get_current_user),
-):
-    if not _uid(user):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    data = await get_developer_detail(
-        organization_name=organization_name,
-        project_name=project_name,
-        dev_key=dev_key,
-    )
-    if not data:
-        raise HTTPException(status_code=404, detail="developer not found")
-
-    return {
-        "status": "ok",
-        "organization_name": organization_name,
-        "project_name": project_name,
-        **data,
-    }
-
-
-# ===== TOPICS =====
-@router.get("/topics", summary="Get all topics (by org & project Neo4j db)")
-async def api_list_topics(
-    organization_name: str = Query(...),
-    project_name: str      = Query(...),
-    limit: int             = Query(100, ge=1, le=500),
-    offset: int            = Query(0, ge=0),
-    user=Depends(get_current_user),
-):
-    if not _uid(user):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    items = await list_topics(
-        organization_name=organization_name,
-        project_name=project_name,
-        limit=limit,
-        offset=offset,
-    )
-    return {
-        "status": "ok",
-        "organization_name": organization_name,
-        "project_name": project_name,
-        "items": items,
-        "limit": limit,
-        "offset": offset,
-    }
 
 
 # ===== ADD NEW BUG =====
@@ -251,7 +171,11 @@ async def api_recommend_developers_for_bug(
     project: str,
     bug_id: str,
     limit: int = Query(5, ge=1, le=50),
+    user=Depends(get_current_user),
 ):
+    if not _uid(user):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     """
     Rekomendasikan developer paling relevan untuk bug tertentu,
     berdasarkan riwayat pengelolaan bug dengan topic yang sama.

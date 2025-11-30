@@ -132,12 +132,10 @@ async def get_developer_detail(
 
     query = """
     MATCH (d:Developer)
-    WHERE d.dev_id = $k OR d.email = $k
+    WHERE d.dev_id = $k
     OPTIONAL MATCH (d)<-[:ASSIGNED_TO]-(b:Bug)
-    OPTIONAL MATCH (d)-[:CONTRIBUTES_TO]->(p:Project)
     RETURN d AS dev,
-           collect(DISTINCT b) AS bugs,
-           collect(DISTINCT p) AS projects
+           collect(DISTINCT b) AS bugs
     """
 
     async with driver.session(database=dbname) as session:
@@ -150,12 +148,10 @@ async def get_developer_detail(
     dev_node = record["dev"]
     dev = dev_node._properties if dev_node is not None else {}
     bugs     = [n._properties for n in record["bugs"]     if n is not None]
-    projects = [n._properties for n in record["projects"] if n is not None]
 
     return {
         "developer": dev,
-        "bugs": bugs,
-        "projects": projects,
+        "bugs": bugs
     }
 
 

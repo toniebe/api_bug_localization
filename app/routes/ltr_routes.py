@@ -2,14 +2,20 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Dict, Any
 import re
 
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.services.ltr_training_service import train_ltr_model
 from app.services.recommendation_ltr_service import recommend_developers_ltr
+
+from app.deps import get_current_user
 
 router = APIRouter(
     prefix="/{organization}/{project}/ltr",
     tags=["ML Learning To Rank"],
 )
 
+
+def _uid(u):
+    return u["uid"] if isinstance(u, dict) else getattr(u, "uid", None)
 
 def _dbname(org: str, proj: str) -> str:
     def to_db(x: str) -> str:
@@ -23,7 +29,11 @@ async def api_train_ltr_model(
     organization: str,
     project: str,
     force_retrain: bool = Query(False, description="Set true to overwrite existing model"),
+    user=Depends(get_current_user),
 ) -> Dict[str, Any]:
+    
+    if not _uid(user):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     """
     Trigger training model Learning-to-Rank untuk rekomendasi developer.
     - Cek apakah model sudah ada.
@@ -53,7 +63,12 @@ async def api_recommend_developers_ltr(
     project: str,
     bug_id: str,
     top_k: int = Query(5, ge=1, le=50),
+    user=Depends(get_current_user),
 ) -> Dict[str, Any]:
+    
+    if not _uid(user):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     """
     Rekomendasi developer menggunakan model Learning-to-Rank.
     """
