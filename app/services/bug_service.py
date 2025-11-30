@@ -300,3 +300,50 @@ class BugService:
             keywords=bug.keywords,
             url=bug.url,
         )
+
+
+async def fetch_bug_dev_pairs(database: str):
+    """
+    Mengambil:
+    - pasangan (bug, developer yang fix)
+    - developer lain sebagai negative sampling
+    """
+
+    driver = await get_driver()
+
+    cypher = """
+    MATCH (b:Bug)-[:ASSIGNED_TO]->(d:Developer)
+    WHERE b.topic_id IS NOT NULL
+    AND b.status = "RESOLVED"
+    AND b.resolution = "FIXED"
+    RETURN
+      b.bug_id AS bug_id,
+      d.dev_id AS developer_id,
+      b.topic_id AS topic_id,
+      b.component AS component,
+      b.summary AS summary
+    """
+
+    async with driver.session(database=database) as session:
+        result = await session.run(cypher)
+        rows = [record async for record in result]
+
+
+    # hasil format list[Record]
+    return [dict(r) for r in rows]
+
+
+async def fetch_all_developers(database: str):
+    driver = await get_driver()
+    cypher = """
+    MATCH (d:Developer)
+    RETURN
+      d.dev_id AS developer_id,
+      d.components AS components,
+      d.last_active_at AS last_active_at
+    """
+    async with driver.session(database=database) as session:
+        result = await session.run(cypher)
+        rows = [record async for record in result]
+
+    return [dict(r) for r in rows]

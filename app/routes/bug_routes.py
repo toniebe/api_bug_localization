@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from typing import Optional, List, Dict, Any
+from app.services.recommendation_service import recommend_developers_for_bug
 
 from app.models.bug import BugIn, BugOut
 from app.services.bug_service import (
@@ -242,3 +243,31 @@ async def add_new_bug_route(
     #         status_code=500,
     #         detail="Internal error processing new bug",
     #     )
+
+
+@router.get("/{bug_id}/recommended-developers")
+async def api_recommend_developers_for_bug(
+    organization: str,
+    project: str,
+    bug_id: str,
+    limit: int = Query(5, ge=1, le=50),
+):
+    """
+    Rekomendasikan developer paling relevan untuk bug tertentu,
+    berdasarkan riwayat pengelolaan bug dengan topic yang sama.
+    """
+    recs = await recommend_developers_for_bug(organization,project,bug_id=bug_id, limit=limit)
+
+    if not recs:
+        # kemungkinan: bug_id tidak punya topic_id, atau belum ada dev yang pernah handle topic itu
+        raise HTTPException(
+            status_code=404,
+            detail="No recommended developers found for this bug (missing topic_id or no history)."
+        )
+
+    return {
+        "bug_id": bug_id,
+        "limit": limit,
+        "recommended_developers": recs,
+    }
+    

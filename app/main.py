@@ -8,6 +8,7 @@ from app.routes.project_routes import router as project_router
 from app.routes.organization_routes import router as organization_router
 from app.routes.bug_routes import router as bug_router
 from app.routes.data_routes import router as data_router
+from app.routes.ltr_routes import router as ltr_router
 
 
 app = FastAPI(
@@ -35,3 +36,4 @@ app.include_router(project_router)
 app.include_router(organization_router)
 app.include_router(bug_router)
 app.include_router(data_router)
+app.include_router(ltr_router)
