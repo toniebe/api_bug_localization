@@ -42,7 +42,7 @@ async def fetch_candidate_developers(database: str, bug_topic_id: int):
     driver = await get_driver()
     cypher = """
     MATCH (d:Developer)<-[:ASSIGNED_TO]-(bTopic:Bug)
-    WHERE bTopic.topic_id = $topic_id
+    WHERE toString(bTopic.topic_id) = toString($topic_id)
     WITH d, count(bTopic) AS bugs_fixed_topic
 
     MATCH (d)<-[:ASSIGNED_TO]-(bAll:Bug)

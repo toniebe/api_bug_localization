@@ -2,9 +2,13 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Dict, Any
 import re
 
+from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.services.ltr_training_service import train_ltr_model
 from app.services.recommendation_ltr_service import recommend_developers_ltr
+
+from app.services.recommendation_ltr_service import recommend_developers_ltr_from_description
 
 from app.deps import get_current_user
 
@@ -85,6 +89,43 @@ async def api_recommend_developers_ltr(
         raise HTTPException(
             status_code=404,
             detail="No recommended developers found (missing topic, candidates, or features).",
+        )
+
+    return result
+
+
+
+class BugTextQuery(BaseModel):
+    summary: str
+    component: Optional[str] = None
+
+
+@router.post("/recommended-developers/ltr")
+async def api_recommend_developers_ltr_from_description(
+    organization: str,
+    project: str,
+    payload: BugTextQuery,
+    top_k: int = Query(5, ge=1, le=50),
+    user=Depends(get_current_user),
+) -> Dict[str, Any]:
+    dbname = _dbname(organization, project)
+    if not _uid(user):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    result = await recommend_developers_ltr_from_description(
+        organization=organization,
+        project=project,
+        database=dbname,   # dipakai untuk Neo4j & NlpTopicService
+        summary=payload.summary,
+        component=payload.component,
+        top_k=top_k,
+    )
+
+    # Kalau kamu mau tetap 200 meski kosong, bisa hapus HTTPException ini
+    if not result.get("recommended_developers"):
+        raise HTTPException(
+            status_code=404,
+            detail=result,
         )
 
     return result
