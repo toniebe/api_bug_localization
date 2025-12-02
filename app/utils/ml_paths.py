@@ -15,9 +15,9 @@ def clean_name_no_separator(x: str) -> str:
 def get_ltr_model_path(org: str, project: str) -> str:
     """
     Return path:
-      models/{OrgName}{ProjectName}/dev_recommender_ltr.json
+      modelsLtr/{OrgName}{ProjectName}/dev_recommender_ltr.json
     """
-    folder = f"models/{clean_name_no_separator(org)}{clean_name_no_separator(project)}"
+    folder = f"modelsLtr/{clean_name_no_separator(org)}{clean_name_no_separator(project)}"
     os.makedirs(folder, exist_ok=True)
     return f"{folder}/dev_recommender_ltr.json"
 
