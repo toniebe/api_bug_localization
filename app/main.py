@@ -11,6 +11,7 @@ from app.routes.data_routes import router as data_router
 from app.routes.ltr_routes import router as ltr_router
 from app.routes.topics_routes import router as topic_router
 from app.routes.developer_routes import router as developer_router
+from app.routes.user_routes import router as user_router
 
 
 app = FastAPI(
@@ -33,6 +34,7 @@ def healthcheck():
     return {"status": "ok", "service": "easyfix", "version": "0.0.1"}
 
 app.include_router(auth_router)
+app.include_router(user_router)
 app.include_router(search_router)
 app.include_router(project_router)
 app.include_router(organization_router)

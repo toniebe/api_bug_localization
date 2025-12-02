@@ -1,6 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, field_validator
 
 class RegisterRequest(BaseModel):
     email: EmailStr

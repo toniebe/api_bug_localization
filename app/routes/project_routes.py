@@ -1,5 +1,5 @@
 # app/routes/new_project_routes.py
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from pydantic import BaseModel, Field
 from app.deps import get_current_user
 from app.services.project_service import (
@@ -12,7 +12,13 @@ from app.services.project_service import (
 from app.services.ml_runner_service import schedule_pipeline_for_project
 import os
 from fastapi import Query
-from app.services.project_service import _slugify 
+from app.services.project_service import _slugify
+from google.cloud import firestore
+from app.models.project import AddProjectMemberRequest, ProjectMemberResponse
+
+
+def get_db() -> firestore.Client:
+    return firestore.Client() 
 
 router = APIRouter(prefix="/api", tags=["projects"])
 
@@ -242,4 +248,99 @@ async def check_ml_env_endpoint(
         "project_slug": proj_info["project_slug"],
         "database_name": database_name,
         "environment": env_check,
+    }
+
+
+
+@router.post("/{org_id}/{project_id}/members")
+async def add_project_member(
+    org_id: str,
+    project_id: str,
+    payload: AddProjectMemberRequest,
+    db: firestore.Client = Depends(get_db),
+    user = Depends(get_current_user),   
+):
+    uid = getattr(user, "uid", None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # ---- 1. Load project ----
+    project_ref = (
+            db.collection("organizations")
+            .document(org_id)
+            .collection("projects")
+            .document(project_id)
+        )
+    project_snap = project_ref.get()
+
+    if not project_snap.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    project_data = project_snap.to_dict()
+
+    if not project_snap.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    project_data = project_snap.to_dict()
+
+    # ---- 2. Authorization (simple example) ----
+    # Only owner can add members (adjust as you like)
+    # owner_uid = project_data.get("owner_uid")
+    # if current_user.uid != owner_uid:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Only project owner can add members",
+    #     )
+
+    # ---- 3. Check target user exists ----
+    users_ref = db.collection("users")
+    query = users_ref.where("email", "==", payload.email).limit(1)
+    user_docs = list(query.stream())
+
+    if not user_docs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with that email not found",
+        )
+
+    user_doc = user_docs[0]
+    user_data = user_doc.to_dict()
+
+    # Ambil uid: bisa dari document id atau field "uid"
+    target_uid = user_data.get("uid") or user_doc.id
+
+    # ---- 4. Update project.members (array of uid) ----
+    project_ref.set(
+        {
+            "members": firestore.ArrayUnion([target_uid])
+        },
+        merge=True,
+    )
+
+    # ---- 5. (Opsional) update user.projects ----
+    user_ref = db.collection("users").document(target_uid)
+    user_ref.set(
+        {
+            "projects": firestore.ArrayUnion([{
+                "org_id": org_id,
+                "project_id": project_id,
+            }])
+        },
+        merge=True,
+    )
+
+    # ---- 6. Return response sederhana ----
+    return {
+        "organization_id": org_id,
+        "project_id": project_id,
+        "user_uid": target_uid,
+        "email": payload.email,
+        "role": payload.role or "member",
+        "message": "User added to project successfully",
     }

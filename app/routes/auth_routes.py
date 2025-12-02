@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from app.models.auth import (
     RegisterRequest, RegisterResponse,
     LoginRequest, LoginResponse,
@@ -11,8 +11,10 @@ from app.services.auth_service import (
   get_user_roles_from_claims, get_user_roles_from_firestore,set_user_roles, get_optional_user
 )
 from app.deps import get_current_user, require_roles
+from google.cloud import firestore
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
 
 @router.post("/signup", response_model=RegisterResponse, summary="Register user baru")
 def register(req: RegisterRequest, current_user = Depends(get_optional_user)):
