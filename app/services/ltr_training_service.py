@@ -7,7 +7,7 @@ from app.services.bug_service import fetch_bug_dev_pairs, fetch_all_developers
 from app.services.ltr_features import build_training_dataset, FEATURE_COLUMNS
 from app.utils.ml_paths import get_ltr_model_path, get_ltr_dataset_path
 
-from app.services.bug_service import _dbname
+from app.helper import _dbname
 
 
 async def train_ltr_model(

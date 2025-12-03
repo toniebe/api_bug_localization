@@ -1,7 +1,7 @@
 from typing import Dict, Any
 from app.core.neo4j_conn import get_driver
 
-from app.services.bug_service import _dbname
+from app.helper import _dbname
 
 async def get_developer_topics(
     organization: str,

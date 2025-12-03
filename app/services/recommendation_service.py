@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from app.core.neo4j_conn import get_driver
-from app.services.bug_service import _dbname
+from app.helper import _dbname
 
 async def recommend_developers_for_bug(
     organization_name: str,

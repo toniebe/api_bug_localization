@@ -202,30 +202,30 @@ class BugService:
         project: str,
         bug: BugIn,
     ) -> BugOut:
-        """
-        Proses add new bug:
-        - NLTK preprocess + LDA (LTM) per db_name
-        - Cari similar / duplicate bugs (LDA-based)
-        - Tambah relasi depends_on & duplicate dari field Bugzilla
-        - Simpan ke Neo4j via BugRepository
-        """
+
         bug_id = str(bug.id)
 
-        # 1) NLTK + LDA (LTM)
-        text_for_topic = bug.summary  # bisa ditambah description kalau nanti ada
+        # (1) Infer LDA
+        text_for_topic = bug.summary
         topic_info = self.nlp.infer_topics(db_name=db_name, text=text_for_topic)
         main_topic_id = topic_info["main_topic_id"]
         topic_distribution = topic_info["topic_distribution"]
 
-        # serialize distribusi topic → list[dict] → JSON string
+        # serialize for saving
         topic_distribution_serialized = [
             {"topic_id": int(tid), "prob": float(prob)}
             for tid, prob in topic_distribution
         ]
         topic_distribution_json = json.dumps(topic_distribution_serialized)
 
-        # 2) Similar / duplicate (LDA-based)
-        similar_edges: List[Dict[str, Any]] = []
+        # MULTI TOPIC EDGES (NEW)
+        topic_edges = [
+            {"topic_id": str(tid), "weight": float(prob)}
+            for tid, prob in topic_distribution
+        ]
+
+        # (2) Similar edges
+        similar_edges = []
         if topic_distribution:
             similar_edges = self.nlp.find_similar_bugs(
                 db_name=db_name,
@@ -235,7 +235,7 @@ class BugService:
                 top_k=20,
             )
 
-        # 3) explicit duplicate dari field 'dupe_of'
+        # (3) explicit duplicate
         if bug.dupe_of is not None:
             similar_edges.append(
                 {
@@ -246,8 +246,8 @@ class BugService:
                 }
             )
 
-        # 4) Build payload ke Neo4j
-        bug_doc: Dict[str, Any] = {
+        # (4) Build bug doc
+        bug_doc = {
             "bug_id": bug_id,
             "summary": bug.summary,
             "status": bug.status,
@@ -267,21 +267,21 @@ class BugService:
             "files_changed": bug.files_changed,
             "organization": organization,
             "project": project,
-            "main_topic_id": main_topic_id,
+            "main_topic_id": str(main_topic_id),   # STRING
             "topic_distribution": topic_distribution_json,
         }
 
-        # buang None supaya tidak kirim key kosong ke Neo4j
         bug_doc = {k: v for k, v in bug_doc.items() if v is not None}
 
-        # 5) Simpan ke Neo4j (+ relasi)
+        # (5) Save to Neo4j
         await self.repo.create_bug_with_relations(
             db_name=db_name,
             bug=bug_doc,
             similar_edges=similar_edges,
+            topic_edges=topic_edges,   # NEW
         )
 
-        # 6) Response singkat ke client
+        # (6) Response
         return BugOut(
             bug_id=bug_id,
             summary=bug.summary,
@@ -296,6 +296,7 @@ class BugService:
             keywords=bug.keywords,
             url=bug.url,
         )
+
 
 
 async def fetch_bug_dev_pairs(database: str):

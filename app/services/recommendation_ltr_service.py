@@ -11,7 +11,7 @@ from app.services.ltr_features import (
     fetch_candidate_developers,
     build_feature_row,
 )
-from app.services.bug_service import _dbname
+from app.helper import _dbname
 
 
 async def recommend_developers_ltr(
