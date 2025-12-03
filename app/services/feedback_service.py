@@ -1,4 +1,5 @@
 # app/services/feedback_service.py
+from fastapi import HTTPException
 from firebase_admin import firestore
 from app.core.neo4j_conn import get_driver
 from app.models.feedback import BugFeedbackCreate
@@ -127,6 +128,17 @@ async def submit_bug_feedback(
             )
 
             rec = await result.single()
+
+            # 🔴 TANGANI KALAU TIDAK ADA ROW / RELASI
+            if rec is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=(
+                        f"HAS_TOPIC relation untuk bug_id={bug_id} "
+                        f"dan topic_id={topic_id} tidak ditemukan"
+                    ),
+                )
+
             old_weight = rec["old_weight"]
             new_weight = rec["new_weight"]
 
