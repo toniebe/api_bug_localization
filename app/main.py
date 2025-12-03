@@ -13,6 +13,7 @@ from app.routes.topics_routes import router as topic_router
 from app.routes.developer_routes import router as developer_router
 from app.routes.user_routes import router as user_router
 from app.routes.feedback_routes import router as feedback_router
+from app.routes.dashboard_routes import router as dashboard_router
 
 
 app = FastAPI(
@@ -45,3 +46,4 @@ app.include_router(data_router)
 app.include_router(topic_router)
 app.include_router(ltr_router)
 app.include_router(feedback_router)
+app.include_router(dashboard_router)
