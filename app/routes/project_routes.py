@@ -1,5 +1,6 @@
 # app/routes/new_project_routes.py
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, Depends,UploadFile, File, HTTPException, BackgroundTasks, status
+from typing import List, Any, Dict
 from pydantic import BaseModel, Field
 from app.deps import get_current_user
 from app.services.project_service import (
@@ -15,6 +16,16 @@ from fastapi import Query
 from app.services.project_service import _slugify
 from google.cloud import firestore
 from app.models.project import AddProjectMemberRequest, ProjectMemberResponse
+from app.helper import _dbname
+from pathlib import Path
+
+from app.config import settings
+from app.helper import validate_datacollection_jsonl
+
+
+ML_ENGINE_DIR = Path(settings.ML_ENGINE_DIR)  
+ML_DATASOURCE_BASE = ML_ENGINE_DIR / "datasource"
+
 
 
 def get_db() -> firestore.Client:
@@ -29,6 +40,82 @@ class CreateProjectRequest(BaseModel):
 def _uid(user):
     return user["uid"] if isinstance(user, dict) else getattr(user, "uid", None)
 
+
+
+@router.get("/{organization}/{project}")
+async def get_users_in_project(organization: str, project: str, user=Depends(get_current_user)):
+    
+    
+    """
+    Return list of users assigned to a project.
+    Firestore document name is concatenation of organization + project (lowercase + underscore).
+    """
+    
+    uid = _uid(user)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+    db = get_db()
+
+    # normalisasi nama dokumen
+    doc_ref = (
+        db.collection("organizations")
+        .document(organization)
+        .collection("projects")
+        .document(project)
+    )
+
+    doc = doc_ref.get()
+
+    if not doc.exists:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Project '{project}' in organization '{organization}' not found",
+        )
+
+    data: Dict[str, Any] = doc.to_dict() or {}
+    member_uids: List[str] = data.get("members", [])
+
+    members_detail = []
+
+    for uid in member_uids:
+        user_ref = db.collection("users").document(uid)
+        user_doc = user_ref.get()
+
+        if user_doc.exists:
+            udata = user_doc.to_dict() or {}
+
+            roles = udata.get("roles", []) or []
+            primary_role = roles[0] if roles else None
+
+            members_detail.append({
+                "uid": uid,
+                "email": udata.get("email"),
+                "display_name": udata.get("display_name"),
+                "roles": roles,
+                "primary_role": primary_role,
+                # kalau mau ikut balikin info project user juga:
+                "projects": udata.get("projects", []),
+            })
+        else:
+            # user id ada di members tapi dokumen user hilang
+            members_detail.append({
+                "uid": uid,
+                "email": None,
+                "display_name": None,
+                "roles": [],
+                "primary_role": None,
+                "projects": [],
+            })
+
+    return {
+        "organization": organization,
+        "project": project,
+        "count": len(members_detail),
+        "members": members_detail,
+    }
+    
 @router.post("/createProjects", summary="Create project (simple write)")
 async def create_project_endpoint(req: CreateProjectRequest,   bg: BackgroundTasks, user=Depends(get_current_user)):
     uid = _uid(user)
@@ -53,7 +140,58 @@ async def create_project_endpoint(req: CreateProjectRequest,   bg: BackgroundTas
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {e}")
-    
+   
+
+
+@router.post("/{organization}/{project}/upload-datacollection")
+async def upload_datacollection(
+    organization: str,
+    project: str,
+    file: UploadFile = File(...),
+    user=Depends(get_current_user)
+):
+    uid = _uid(user)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+    # Optional: basic validation
+    if not file.filename.endswith(".jsonl"):
+        raise HTTPException(
+            status_code=400,
+            detail="File must have .jsonl extension",
+        )
+
+    db_name= _dbname(organization,project)
+    target_filename = f"{db_name}.jsonl"
+
+    target_path = ML_DATASOURCE_BASE / target_filename
+
+    try:
+        # Read entire uploaded file
+        raw = await file.read()
+
+        # 🔍 Validate structure & format
+        validate_datacollection_jsonl(raw)
+
+        # Save if valid
+        with target_path.open("wb") as f:
+            f.write(raw)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save file: {e}"
+        )
+
+    return {
+        "message": "datacollection uploaded & validated successfully",
+        "saved_as": str(target_path),
+        "db_name": db_name,
+    }
+     
 @router.post("/projects/start-ml", summary="Start ML Engine for Existing Project")
 async def start_ml_engine(
     bg: BackgroundTasks,
@@ -344,3 +482,4 @@ async def add_project_member(
         "role": payload.role or "member",
         "message": "User added to project successfully",
     }
+    
