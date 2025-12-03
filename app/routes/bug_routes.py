@@ -29,7 +29,7 @@ def _uid(u):
 
 
 # ===== BUGS =====
-@router.get("/bugs", summary="Get all bugs (by org & project Neo4j db)")
+@router.get("/", summary="Get all bugs (by org & project Neo4j db)")
 async def api_list_bugs(
     organization_name: str = Query(..., description="Organization name"),
     project_name: str      = Query(..., description="Project name"),
@@ -39,21 +39,24 @@ async def api_list_bugs(
 ):
     if not _uid(user):
         raise HTTPException(status_code=401, detail="Not authenticated")
-
-    items = await list_bugs(
-        organization_name=organization_name,
-        project_name=project_name,
-        limit=limit,
-        offset=offset,
-    )
-    return {
-        "status": "ok",
-        "organization_name": organization_name,
-        "project_name": project_name,
-        "items": items,
-        "limit": limit,
-        "offset": offset,
-    }
+    try:
+        items = await list_bugs(
+            organization_name=organization_name,
+            project_name=project_name,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "status": "ok",
+            "organization_name": organization_name,
+            "project_name": project_name,
+            "items": items,
+            "limit": limit,
+            "offset": offset,
+        }
+    except Exception:
+        raise HTTPException(status_code=500, detail="NOK")
+        
 
 
 @router.get("/bugs/{bug_id}", summary="Get bug detail (by org & project Neo4j db)")

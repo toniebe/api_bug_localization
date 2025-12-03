@@ -10,21 +10,10 @@ from app.core.neo4j_conn import get_driver
 from app.models.bug import BugIn, BugOut
 from app.repositories.bug_repository import BugRepository
 from app.services.nlp_topic_service import get_nlp_topic_service
+from app.helper import _dbname
 
 DEFAULT_SIM_THRESHOLD = 0.60
 DEFAULT_DUP_THRESHOLD = 0.80
-
-
-def _dbname(org: str, proj: str) -> str:
-    """
-    Generate Neo4j database name from organization + project.
-    MUST be konsisten dengan database_name di Firestore (project_service).
-    Example: "EasyFix Labs" + "Alpha Project" -> "easyfix_labs_alpha_project"
-    """
-    def to_db(x: str) -> str:
-        return re.sub(r"[^a-z0-9]+", "_", x.strip().lower()).strip("_")
-    base = f"{to_db(org)}{to_db(proj)}"
-    return base[:63] if len(base) > 63 else base
 
 
 # ====== LISTING / DETAIL (langsung ke Neo4j via async driver) ======
@@ -41,10 +30,10 @@ async def list_bugs(
     query = """
     MATCH (b:Bug)
     RETURN b.bug_id AS bug_id,
-           b.status AS status,
-           b.assigned_to as asignee,
-           b.clean_text as description,
-           b.summary as summary
+        b.status AS status,
+        b.assigned_to as asignee,
+        b.clean_text as description,
+        b.summary as summary
     ORDER BY b.bug_id
     SKIP $offset LIMIT $limit
     """
@@ -52,6 +41,7 @@ async def list_bugs(
     async with driver.session(database=dbname) as session:
         result = await session.run(query, {"offset": offset, "limit": limit})
         records = [dict(record) async for record in result]
+        
 
     return records
 
